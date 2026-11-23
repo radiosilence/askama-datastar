@@ -91,3 +91,10 @@ fn markup_answered_on_its_own_is_html() {
         "text/html; charset=utf-8"
     );
 }
+
+#[test]
+fn no_markup_can_be_held_in_a_static() {
+    static NOTHING: Html = Html::new();
+    assert_eq!(NOTHING.as_str(), "");
+    assert_eq!(NOTHING, Html::default());
+}

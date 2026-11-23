@@ -42,6 +42,13 @@ use datastar::prelude::PatchElements;
 pub struct Html(String);
 
 impl Html {
+    /// No markup, as an absent fragment renders. `const`, so a `static` can
+    /// hold one for templates that borrow an `Html` that may not be there.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self(String::new())
+    }
+
     /// Renders `template`. It fails only where a value's `Display` or a filter
     /// does; what to make of that is the caller's to decide.
     ///
