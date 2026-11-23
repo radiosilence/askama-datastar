@@ -1,0 +1,1 @@
+- **Datastar v1.0.5, vendored.** `script::serve` serves Datastar's script from the binary and `script::url` names it with a hash of its contents, so a browser keeps it for good and fetches a new release at once. CI checks the copy byte for byte against the release's.

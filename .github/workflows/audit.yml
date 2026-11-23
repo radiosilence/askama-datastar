@@ -1,0 +1,26 @@
+name: Audit
+
+# Cargo.lock against the RustSec advisory database, with deny.toml's ignores.
+# ci-cd.yml calls this when dependencies change and on its scheduled runs,
+# since advisories are also published against code that has not changed. A
+# manual run audits main without the rest of the pipeline.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        # rust as well: cargo-deny reads the lockfile through `cargo metadata`,
+        # which should be the cargo mise.toml installs rather than the runner's.
+        with:
+          install_args: just rust cargo-deny
+      - run: just audit

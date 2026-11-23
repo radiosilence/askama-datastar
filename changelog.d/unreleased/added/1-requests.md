@@ -1,0 +1,1 @@
+- **Datastar's requests and signals.** `is_datastar` tells Datastar's requests from page loads, `require_datastar_on_post` refuses a POST without Datastar's header, and `Signals` reads a request's signals, drawing the default view when they are missing or do not parse.
