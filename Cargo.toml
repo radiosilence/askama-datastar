@@ -1,0 +1,37 @@
+[package]
+name = "askama_datastar"
+version = "0.0.0"
+edition = "2024"
+description = "Askama templates as Datastar patches for axum: rendered markup, SSE answers and streams, signals, and a vendored datastar.js"
+keywords = ["askama", "datastar", "axum", "sse", "template"]
+categories = ["web-programming", "template-engine"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/radiosilence/askama-datastar"
+documentation = "https://docs.rs/askama_datastar"
+readme = "README.md"
+include = ["src/", "assets/datastar.js", "README.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE"]
+
+[dependencies]
+askama = { version = "0.16.1", default-features = false, features = ["std"] }
+# `tokio` is what axum's SSE keep-alive runs on.
+axum = { version = "0.8.9", default-features = false, features = ["tokio"] }
+# The event formatting: Datastar's own SDK, which runs Datastar's SDK test suite.
+datastar = { version = "0.4.2", default-features = false, features = ["axum"] }
+form_urlencoded = "1.2.2"
+futures-util = { version = "0.3.34", default-features = false }
+serde = { version = "1.0.229", default-features = false }
+serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+askama = "0.16.1"
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.54.1", features = ["macros", "rt", "time", "test-util"] }
+tower = { version = "0.5.3", features = ["util"] }
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"

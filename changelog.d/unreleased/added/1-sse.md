@@ -1,0 +1,1 @@
+- **Answers and live streams.** `events` answers with patches and signal updates in order; `stream` keeps a live stream open, with a comment after 15 seconds of quiet so a proxy leaves it open. Neither may be kept by a cache.
