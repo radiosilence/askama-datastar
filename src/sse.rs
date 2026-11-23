@@ -13,11 +13,15 @@ use futures_util::{Stream, StreamExt as _};
 
 /// `events` as one answer, which ends once the last is sent.
 ///
+/// Events of different kinds go in as axum's [`Event`], which each converts
+/// into; naming the first is enough for the rest to follow:
+///
 /// ```
 /// use askama_datastar::{Html, PatchSignals, events};
+/// use axum::response::sse::Event;
 ///
 /// let response = events([
-///     Html::trusted(r#"<p id="flash">Saved.</p>"#).patch().into(),
+///     Event::from(Html::trusted(r#"<p id="flash">Saved.</p>"#).patch()),
 ///     PatchSignals::new(r#"{"name":""}"#).into(),
 /// ]);
 /// assert_eq!(response.headers()["content-type"], "text/event-stream");

@@ -41,6 +41,10 @@ pub fn url(path: &str) -> String {
 /// Asked for by the URL [`url`] gives, it is cached for a year as immutable.
 /// Asked for any other way, by a bare path or a page from an earlier build, it
 /// is cached for an hour, since that address will not always be this copy.
+#[expect(
+    clippy::unused_async,
+    reason = "axum takes a handler as an async fn, and this one has nothing to wait for"
+)]
 pub async fn serve(RawQuery(query): RawQuery) -> Response {
     let cache = if query.as_deref() == Some(QUERY.as_str()) {
         "public, max-age=31536000, immutable"

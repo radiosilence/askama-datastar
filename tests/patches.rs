@@ -5,6 +5,7 @@
 use askama::Template;
 use askama_datastar::{ElementPatchMode, Html, PatchSignals, events};
 use axum::response::Response;
+use axum::response::sse::Event;
 
 async fn body(response: Response) -> String {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -115,7 +116,7 @@ async fn multi_line_signals_keep_the_prefix_on_every_line() {
 #[tokio::test]
 async fn events_go_in_the_order_given() {
     let answer = events([
-        Html::trusted("<p id=\"flash\">Saved.</p>").patch().into(),
+        Event::from(Html::trusted("<p id=\"flash\">Saved.</p>").patch()),
         PatchSignals::new(r#"{"name":""}"#).into(),
     ]);
     assert_eq!(

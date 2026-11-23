@@ -74,7 +74,7 @@ Html::render(&row)?.patch().selector("#rows").mode(ElementPatchMode::Append)
 
 ```rust
 events([
-    Html::render(&flash)?.patch().into(),
+    Event::from(Html::render(&flash)?.patch()), // axum's SSE event, which each kind converts into
     PatchSignals::new(r#"{"name":""}"#).into(),
 ])
 ```
