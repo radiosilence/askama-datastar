@@ -5,7 +5,6 @@
 use askama::Template;
 use askama_datastar::{ElementPatchMode, Html, PatchSignals, events};
 use axum::response::Response;
-use axum::response::sse::Event;
 
 async fn body(response: Response) -> String {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -30,7 +29,7 @@ async fn a_rendered_template_is_one_elements_line_per_line_of_markup() {
     })
     .expect("renders");
     assert_eq!(
-        body(events([rows.patch()])).await,
+        body(events([rows.patch().into()])).await,
         concat!(
             "event: datastar-patch-elements\n",
             "data: elements <ul id=\"rows\">\n",
@@ -49,7 +48,7 @@ async fn a_selector_and_mode_come_before_the_elements() {
         .selector("#rows")
         .mode(ElementPatchMode::Append);
     assert_eq!(
-        body(events([row])).await,
+        body(events([row.into()])).await,
         concat!(
             "event: datastar-patch-elements\n",
             "data: selector #rows\n",
@@ -66,7 +65,7 @@ async fn the_default_mode_is_left_for_datastar_to_assume() {
         .patch()
         .mode(ElementPatchMode::Outer);
     assert_eq!(
-        body(events([patch])).await,
+        body(events([patch.into()])).await,
         "event: datastar-patch-elements\ndata: elements <p id=\"a\"></p>\n\n",
     );
 }
@@ -77,7 +76,7 @@ async fn a_carriage_return_cannot_end_an_elements_line_early() {
     // as a line of its own without the `elements` prefix.
     let patch = Html::trusted("<p id=\"a\">one\r<b>two</b>\r\nthree</p>").patch();
     assert_eq!(
-        body(events([patch])).await,
+        body(events([patch.into()])).await,
         concat!(
             "event: datastar-patch-elements\n",
             "data: elements <p id=\"a\">one\n",
@@ -92,7 +91,7 @@ async fn a_carriage_return_cannot_end_an_elements_line_early() {
 async fn signals_are_sent_as_the_json_given() {
     let signals = PatchSignals::new(r#"{"q":"","active":0,"_open":false}"#);
     assert_eq!(
-        body(events([signals])).await,
+        body(events([signals.into()])).await,
         "event: datastar-patch-signals\ndata: signals {\"q\":\"\",\"active\":0,\"_open\":false}\n\n",
     );
 }
@@ -101,7 +100,7 @@ async fn signals_are_sent_as_the_json_given() {
 async fn multi_line_signals_keep_the_prefix_on_every_line() {
     let signals = PatchSignals::new("{\n  \"q\": \"moss\"\n}").only_if_missing(true);
     assert_eq!(
-        body(events([signals])).await,
+        body(events([signals.into()])).await,
         concat!(
             "event: datastar-patch-signals\n",
             "data: onlyIfMissing true\n",
@@ -116,7 +115,7 @@ async fn multi_line_signals_keep_the_prefix_on_every_line() {
 #[tokio::test]
 async fn events_go_in_the_order_given() {
     let answer = events([
-        Event::from(Html::trusted("<p id=\"flash\">Saved.</p>").patch()),
+        Html::trusted("<p id=\"flash\">Saved.</p>").patch().into(),
         PatchSignals::new(r#"{"name":""}"#).into(),
     ]);
     assert_eq!(
@@ -136,7 +135,7 @@ async fn events_go_in_the_order_given() {
 async fn an_element_can_be_removed_by_selector() {
     let remove = askama_datastar::PatchElements::new_remove("#row-7");
     assert_eq!(
-        body(events([remove])).await,
+        body(events([remove.into()])).await,
         "event: datastar-patch-elements\ndata: selector #row-7\ndata: mode remove\n\n",
     );
 }

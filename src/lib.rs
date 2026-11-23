@@ -49,7 +49,7 @@
 //! }
 //!
 //! fn search(rows: Vec<String>) -> askama::Result<Response> {
-//!     Ok(events([Html::render(&Results { rows })?.patch()]))
+//!     Ok(events([Html::render(&Results { rows })?.patch().into()]))
 //! }
 //!
 //! let rows = vec!["<b>moss</b>".to_owned()];

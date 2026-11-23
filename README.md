@@ -52,7 +52,7 @@ async fn page(State(app): State<App>) -> Result<Html, AppError> {
 }
 
 async fn results(State(app): State<App>, Signals(search): Signals<Search>) -> Result<Response, AppError> {
-    Ok(events([Html::render(&Results { rows: app.rows(&search.q) })?.patch()]))
+    Ok(events([Html::render(&Results { rows: app.rows(&search.q) })?.patch().into()]))
 }
 ```
 
@@ -74,10 +74,12 @@ Html::render(&row)?.patch().selector("#rows").mode(ElementPatchMode::Append)
 
 ```rust
 events([
-    Event::from(Html::render(&flash)?.patch()), // axum's SSE event, which each kind converts into
+    Html::render(&flash)?.patch().into(), // axum's SSE `Event`, which each kind converts into
     PatchSignals::new(r#"{"name":""}"#).into(),
 ])
 ```
+
+`events(Vec::new())` answers without changing the page.
 
 `stream` keeps a live stream open, sending each event as it comes, and a comment after
 15 seconds of quiet so a proxy does not close the connection:

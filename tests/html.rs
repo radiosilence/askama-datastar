@@ -19,7 +19,7 @@ struct Page<'a> {
 }
 
 async fn sent(html: &Html) -> String {
-    let bytes = axum::body::to_bytes(events([html.patch()]).into_body(), usize::MAX)
+    let bytes = axum::body::to_bytes(events([html.patch().into()]).into_body(), usize::MAX)
         .await
         .expect("a finished body");
     let body = String::from_utf8(bytes.to_vec()).expect("UTF-8");

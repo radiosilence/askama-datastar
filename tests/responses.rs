@@ -10,7 +10,7 @@ use tokio::time::Instant;
 
 #[test]
 fn an_answer_is_an_event_stream_no_cache_may_keep() {
-    let response = events([Html::trusted("<p id=\"a\"></p>").patch()]);
+    let response = events([Html::trusted("<p id=\"a\"></p>").patch().into()]);
     assert_eq!(response.headers()["content-type"], "text/event-stream");
     assert_eq!(response.headers()["cache-control"], "no-store");
 }
@@ -71,11 +71,8 @@ async fn a_stream_ends_when_its_events_do() {
 
 #[tokio::test]
 async fn an_answer_with_no_events_is_an_empty_stream() {
-    let bytes = axum::body::to_bytes(
-        events(Vec::<askama_datastar::PatchElements>::new()).into_body(),
-        usize::MAX,
-    )
-    .await
-    .expect("an empty answer is a finished body");
+    let bytes = axum::body::to_bytes(events(Vec::new()).into_body(), usize::MAX)
+        .await
+        .expect("an empty answer is a finished body");
     assert!(bytes.is_empty(), "an empty answer sent {bytes:?}");
 }

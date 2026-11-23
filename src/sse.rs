@@ -11,27 +11,25 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::{Stream, StreamExt as _};
 
-/// `events` as one answer, which ends once the last is sent.
+/// `events` as one answer, which ends once the last is sent; none at all
+/// answers without changing the page.
 ///
-/// Events of different kinds go in as axum's [`Event`], which each converts
-/// into; naming the first is enough for the rest to follow:
+/// Each event is axum's [`Event`], which a patch and a signal update each
+/// convert into, so one answer can carry both:
 ///
 /// ```
 /// use askama_datastar::{Html, PatchSignals, events};
-/// use axum::response::sse::Event;
 ///
 /// let response = events([
-///     Event::from(Html::trusted(r#"<p id="flash">Saved.</p>"#).patch()),
+///     Html::trusted(r#"<p id="flash">Saved.</p>"#).patch().into(),
 ///     PatchSignals::new(r#"{"name":""}"#).into(),
 /// ]);
 /// assert_eq!(response.headers()["content-type"], "text/event-stream");
+///
+/// let nothing = events(Vec::new());
 /// ```
-pub fn events<I>(events: I) -> Response
-where
-    I: IntoIterator,
-    I::Item: Into<Event>,
-{
-    let events: Vec<Event> = events.into_iter().map(Into::into).collect();
+pub fn events(events: impl IntoIterator<Item = Event>) -> Response {
+    let events: Vec<Event> = events.into_iter().collect();
     unstored(Sse::new(futures_util::stream::iter(
         events.into_iter().map(Ok::<_, Infallible>),
     )))
