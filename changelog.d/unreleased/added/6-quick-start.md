@@ -1,0 +1,1 @@
+- **Quick start.** The README opens with a whole counter server, `examples/counter.rs`; clippy builds it and a test fails when the README's copy differs.
