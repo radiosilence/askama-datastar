@@ -28,7 +28,10 @@ use futures_util::{Stream, StreamExt as _};
 ///
 /// let nothing = events(Vec::new());
 /// ```
+#[must_use]
 pub fn events(events: impl IntoIterator<Item = Event>) -> Response {
+    // Collected, since the body outlives the handler and the iterator may
+    // borrow from it.
     let events: Vec<Event> = events.into_iter().collect();
     unstored(Sse::new(futures_util::stream::iter(
         events.into_iter().map(Ok::<_, Infallible>),
@@ -40,6 +43,7 @@ pub fn events(events: impl IntoIterator<Item = Event>) -> Response {
 /// A comment goes down the connection after 15 seconds without an event, so a
 /// proxy that closes a quiet connection leaves it open. The stream ends when
 /// `events` does, or when the client goes and the response is dropped.
+#[must_use]
 pub fn stream<S>(events: S) -> Response
 where
     S: Stream + Send + 'static,

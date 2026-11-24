@@ -31,6 +31,8 @@ in that server. Each piece works alone, so a server can take one without the res
 - **No `\r` reaches an SSE line.** `Html::patch` normalises line breaks as an HTML parser
   does; tested in `tests/patches.rs`.
 - **No cache keeps an event stream.** `events` and `stream` send `Cache-Control: no-store`.
+- **A page and a fragment at one address stay apart in a cache.** `Html`'s response sends
+  `Vary: datastar-request`; tested in `tests/html.rs`.
 - **The vendored script is upstream's.** `assets/datastar.js` is the release's
   `bundles/datastar.js`, byte for byte: a unit test checks its first line against
   `script::VERSION`, and CI's `Datastar script` job downloads the release and compares.
@@ -52,7 +54,7 @@ A new Datastar release: `just datastar X.Y.Z` writes `assets/datastar.js` and `s
 ## Check
 
 ```sh
-just check   # fmt --check, clippy -D warnings, tests, docs, changelog, actionlint
+just check   # fmt --check, clippy -D warnings, tests, docs, changelog, actionlint, shellcheck
 just fast    # Cargo.lock and format, in seconds; the pre-push hook
 just fmt
 ```

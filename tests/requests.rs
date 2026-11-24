@@ -21,7 +21,12 @@ fn a_request_with_datastars_header_is_datastars() {
 
 fn guarded() -> Router {
     Router::new()
-        .route("/save", post(|| async { "saved" }).get(|| async { "page" }))
+        .route(
+            "/save",
+            post(|| async { "saved" })
+                .get(|| async { "page" })
+                .put(|| async { "put" }),
+        )
         .layer(from_fn(require_datastar_on_post))
 }
 
@@ -44,6 +49,16 @@ async fn a_post_without_datastars_header_is_refused() {
 async fn a_post_from_datastar_goes_through() {
     let request = Request::post("/save")
         .header("datastar-request", "true")
+        .body(Body::empty())
+        .expect("a request");
+    assert_eq!(status(guarded(), request).await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn other_methods_are_left_to_the_browsers_preflight() {
+    // A form cannot send a PUT, and a script on another site cannot send one
+    // without a CORS preflight, so only a POST needs the header.
+    let request = Request::put("/save")
         .body(Body::empty())
         .expect("a request");
     assert_eq!(status(guarded(), request).await, StatusCode::OK);

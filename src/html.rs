@@ -11,8 +11,11 @@ use std::fmt;
 use std::ops::Deref;
 
 use askama::Template;
+use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use datastar::prelude::PatchElements;
+
+use crate::request::HEADER;
 
 /// HTML rendered from a template, or written by the program's own code: never
 /// text that came from anyone.
@@ -63,6 +66,7 @@ impl Html {
     /// Markup the program wrote itself, such as an icon or a QR code. Nothing a
     /// person typed, and no name or tag from elsewhere, may reach it
     /// unescaped: it is spliced into pages as it is.
+    #[must_use]
     pub fn trusted(markup: impl Into<String>) -> Self {
         Self(markup.into())
     }
@@ -78,7 +82,7 @@ impl Html {
     /// the `elements` prefix that marks it as markup.
     #[must_use]
     pub fn patch(&self) -> PatchElements {
-        PatchElements::new(lines(&self.0))
+        PatchElements::new(normalise_line_breaks(&self.0))
     }
 
     /// The markup as text.
@@ -89,7 +93,7 @@ impl Html {
 }
 
 /// `markup` with HTML's line breaks: CRLF and lone CRs as LF.
-fn lines(markup: &str) -> Cow<'_, str> {
+fn normalise_line_breaks(markup: &str) -> Cow<'_, str> {
     if markup.contains('\r') {
         Cow::Owned(markup.replace("\r\n", "\n").replace('\r', "\n"))
     } else {
@@ -126,10 +130,19 @@ impl FromIterator<Html> for Html {
     }
 }
 
-/// A page, or a fragment for Datastar to morph in by its ids, as `text/html`.
+/// A page, or fragments for Datastar to morph in by their ids, as `text/html`.
+///
+/// The response varies on Datastar's request header. One address can answer a
+/// page load with the page and Datastar with a fragment of it, and without the
+/// header a browser going back to that address could show the fragment it kept
+/// last in place of the page.
 impl IntoResponse for Html {
     fn into_response(self) -> Response {
-        axum::response::Html(self.0).into_response()
+        (
+            [(header::VARY, HeaderValue::from_static(HEADER))],
+            axum::response::Html(self.0),
+        )
+            .into_response()
     }
 }
 
@@ -141,16 +154,19 @@ impl From<Html> for String {
 
 #[cfg(test)]
 mod tests {
-    use super::lines;
+    use super::normalise_line_breaks;
 
     #[test]
     fn line_breaks_become_what_an_html_parser_makes_of_them() {
-        assert_eq!(lines("a\r\nb\rc\nd"), "a\nb\nc\nd");
-        assert_eq!(lines("\r\r\n"), "\n\n");
+        assert_eq!(normalise_line_breaks("a\r\nb\rc\nd"), "a\nb\nc\nd");
+        assert_eq!(normalise_line_breaks("\r\r\n"), "\n\n");
     }
 
     #[test]
     fn markup_without_a_carriage_return_is_not_copied() {
-        assert!(matches!(lines("a\nb"), std::borrow::Cow::Borrowed("a\nb")));
+        assert!(matches!(
+            normalise_line_breaks("a\nb"),
+            std::borrow::Cow::Borrowed("a\nb")
+        ));
     }
 }

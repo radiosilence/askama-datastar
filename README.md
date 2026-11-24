@@ -166,6 +166,13 @@ events([
 
 `events(Vec::new())` answers without changing the page.
 
+An answer of fragments alone can be the `Html` itself, as `text/html`. Datastar morphs
+each of its top-level elements into the page by id, as it does a patch, and a
+compression layer compresses `text/html` where it leaves an event stream alone, so a
+large fragment travels smaller this way. The response varies on `Datastar-Request`, so
+one address can answer a page load with the page and Datastar with a fragment without
+a browser's cache showing one in place of the other.
+
 `stream` keeps a live stream open, sending each event as it comes, and a comment after
 15 seconds of quiet so a proxy does not close the connection:
 
@@ -197,8 +204,10 @@ Datastar follows a redirect like any fetch.
 
 `require_datastar_on_post` is middleware refusing, with 403, a POST without the header.
 Layered over the routes Datastar posts to, it stops cross-site request forgery whatever
-the cookie's `SameSite` allows. A plain form, such as a sign-in, posts to a route outside
-it, whose handler checks `Sec-Fetch-Site` or `Origin` itself.
+the cookie's `SameSite` allows. POST is the one method that needs it: a form sends only
+GET and POST, and another site's script cannot send PUT, PATCH or DELETE without a CORS
+preflight the server never answers. A plain form, such as a sign-in, posts to a route
+outside it, whose handler checks `Sec-Fetch-Site` or `Origin` itself.
 
 `Signals<T>` reads the signals Datastar sends: the `datastar` query parameter of a GET
 or DELETE, and the JSON body of anything else. Signals that are missing or do not parse
