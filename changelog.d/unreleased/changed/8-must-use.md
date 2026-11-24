@@ -1,0 +1,1 @@
+- **`#[must_use]` on `Html::trusted`, `events` and `stream`.** Dropping what they return is always a mistake.

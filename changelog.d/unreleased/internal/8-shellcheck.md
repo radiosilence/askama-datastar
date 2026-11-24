@@ -1,0 +1,1 @@
+- **The scripts are shellchecked.** `just check` and CI's Actionlint job run shellcheck over `scripts/*.sh`.
