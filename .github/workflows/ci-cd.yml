@@ -111,7 +111,7 @@ jobs:
             echo "changes against the base:"
             printf '%s\n' "$files" | sed 's/^/  /'
             # Anything cargo compiles or packages, or that decides how.
-            touches '^LICENSE|^src/|^tests/|^assets/|^Cargo\.(toml|lock)$|^\.cargo/|^rust-toolchain|^\.github/' || rust=false
+            touches '^LICENSE|^src/|^tests/|^examples/|^assets/|^Cargo\.(toml|lock)$|^\.cargo/|^rust-toolchain|^\.github/' || rust=false
             # What the advisory audit reads.
             touches '^Cargo\.(toml|lock)$|^deny\.toml$|^\.github/' || deps=false
             # The vendored script and what names its release.

@@ -67,3 +67,4 @@ just fmt
 | `src/script.rs` | The vendored script: `VERSION`, `SOURCE`, `url`, `serve` |
 | `assets/datastar.js` | Datastar's `bundles/datastar.js` at `VERSION`; written by `scripts/datastar.sh` |
 | `tests/` | The public API end to end: the wire format, responses, requests, the script, fragments |
+| `examples/counter.rs` | The README's quick start, whole; clippy builds it and `tests/readme.rs` fails when the README's copy differs |

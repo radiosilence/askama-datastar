@@ -24,8 +24,9 @@ serde_json = { version = "1.0.154", default-features = false, features = ["std"]
 
 [dev-dependencies]
 askama = "0.16.1"
+axum = "0.8.9"
 serde = { version = "1.0.229", features = ["derive"] }
-tokio = { version = "1.54.1", features = ["macros", "rt", "time", "test-util"] }
+tokio = { version = "1.54.1", features = ["macros", "net", "rt", "rt-multi-thread", "time", "test-util"] }
 tower = { version = "0.5.3", features = ["util"] }
 
 [lints.rust]
