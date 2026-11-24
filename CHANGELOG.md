@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.2
+
+### Changed
+
+- **`#[must_use]` on `Html::trusted`, `events` and `stream`.** Dropping what they return is always a mistake.
+
+### Fixed
+
+- **A page and a fragment at one address stay apart in a cache.** `Html`'s response varies on `Datastar-Request`, so a browser going back to an address that answered Datastar with a fragment shows the page, not the fragment.
+
+### Internal
+
+- **The scripts are shellchecked.** `just check` and CI's Actionlint job run shellcheck over `scripts/*.sh`.
+
 ## 0.1.1
 
 ### Added
