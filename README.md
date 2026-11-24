@@ -23,6 +23,10 @@ that each work alone:
 askama_datastar = "0.1"
 ```
 
+`Html` implements `HtmlSafe` for the askama release this crate depends on. Under another
+release `Html::render` does not compile and an `Html` in a template comes out escaped,
+so a server's askama moves with this crate's.
+
 ## A fragment, written once
 
 A fragment is its own template, or a block of the page's. The page renders it in place,
@@ -98,6 +102,11 @@ stream(async_stream::stream! {
 
 Both send `Cache-Control: no-store`: what they carry is the page as one person sees it.
 
+A stream ends when the server stops. Datastar retries a broken connection but does not
+reopen a stream that ended, and `retry: 'always'` counts each reopening against its ten
+retries, so a page holding a live stream reopens it itself, on an interval or when the
+tab is shown again.
+
 ## Requests and signals
 
 Datastar marks every request with a `Datastar-Request` header, which a cross-site form
@@ -106,15 +115,17 @@ page makes wants a patch, or a status where a page load would be redirected, sin
 Datastar follows a redirect like any fetch.
 
 `require_datastar_on_post` is middleware refusing, with 403, a POST without the header.
-Every state change is a POST made by Datastar, so that stops cross-site request forgery
-whatever the cookie's `SameSite` allows.
+Layered over the routes Datastar posts to, it stops cross-site request forgery whatever
+the cookie's `SameSite` allows. A plain form, such as a sign-in, posts to a route outside
+it, whose handler checks `Sec-Fetch-Site` or `Origin` itself.
 
 `Signals<T>` reads the signals Datastar sends: the `datastar` query parameter of a GET
 or DELETE, and the JSON body of anything else. Signals that are missing or do not parse
 read as `T::default()`, since they describe what a page shows, and a view whose state
 does not parse is drawn as its default rather than refused. A request that changes
-something should refuse what it cannot read instead: use the SDK's `ReadSignals` or
-axum's `Json` there.
+something should refuse what it cannot read instead: use the SDK's `ReadSignals`
+(`askama_datastar::datastar::axum::ReadSignals`) or axum's `Json` there, into a struct
+that accepts fields it does not name, since Datastar sends every signal on the page.
 
 ## The script
 
