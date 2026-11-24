@@ -29,10 +29,12 @@ pub fn is_datastar(headers: &HeaderMap) -> bool {
 
 /// Middleware refusing, with 403, a POST that Datastar did not send.
 ///
-/// Every state change is a POST made by Datastar, so one without its header
-/// came from a form or a script on another site. Refusing it stops cross-site
-/// request forgery whatever the cookie's `SameSite` allows: a sibling
-/// subdomain counts as the same site.
+/// Layered over the routes Datastar posts to, it refuses a POST without the
+/// header: one that came from a form or a script on another site. That stops
+/// cross-site request forgery whatever the cookie's `SameSite` allows: a
+/// sibling subdomain counts as the same site. A plain form, such as a sign-in,
+/// posts to a route outside the layer, whose handler checks `Sec-Fetch-Site`
+/// or `Origin` itself.
 ///
 /// ```
 /// use axum::Router;
@@ -61,7 +63,9 @@ pub async fn require_datastar_on_post(request: Request, next: Next) -> Response 
 ///
 /// A request that changes something should refuse what it cannot read
 /// instead, so that a body nobody meant to send changes nothing: take
-/// [`datastar::axum::ReadSignals`] or axum's `Json` there.
+/// [`datastar::axum::ReadSignals`] or axum's `Json` there, into a struct that
+/// accepts fields it does not name, since Datastar sends every signal on the
+/// page.
 ///
 /// It reads the body, so it is the last of a handler's extractors.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
