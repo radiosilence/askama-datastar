@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+### Fixed
+
+- **The docs no longer promise more than the crate does.** `require_datastar_on_post` is layered over the routes Datastar posts to, with plain forms outside it, where the docs said every state change was Datastar's; a live stream ends when its server stops and its page reopens it, since Datastar does not; an action's signals struct accepts fields it does not name; and a server's askama moves with this crate's.
+
 ## 0.1.0
 
 The first release: the glue between Askama, Datastar and axum that radiosilence's servers each wrote for themselves, built on Datastar's Rust SDK.
