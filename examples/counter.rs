@@ -40,8 +40,13 @@ struct Page {
 type Counter = Arc<AtomicU64>;
 
 async fn page(State(counter): State<Counter>) -> Result<Html, StatusCode> {
-    let count = render(&Count { n: counter.load(Ordering::Relaxed) })?;
-    render(&Page { script: script::url("/datastar.js"), count })
+    let count = render(&Count {
+        n: counter.load(Ordering::Relaxed),
+    })?;
+    render(&Page {
+        script: script::url("/datastar.js"),
+        count,
+    })
 }
 
 async fn increment(State(counter): State<Counter>) -> Result<Response, StatusCode> {
