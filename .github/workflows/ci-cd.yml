@@ -264,8 +264,9 @@ jobs:
             python3 scripts/changelog.py --lint
           fi
 
-  # Always runs: the workflows are checked wherever the change is. actionlint
-  # and shellcheck come from mise.toml, the versions a contributor runs.
+  # Always runs: the workflows and scripts are checked wherever the change is.
+  # actionlint and shellcheck come from mise.toml, the versions a contributor
+  # runs.
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
@@ -276,6 +277,7 @@ jobs:
         with:
           install_args: actionlint shellcheck
       - run: actionlint -color
+      - run: shellcheck scripts/*.sh
 
   # The one status the ruleset requires. Skipped jobs are domains the change
   # does not touch and pass; anything failed or cancelled fails it.

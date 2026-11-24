@@ -1,8 +1,8 @@
 # askama_datastar — Askama templates as Datastar patches, for axum
 
 # What CI checks, short of the audit and the download that checks the vendored
-# script: format, lint with warnings as errors, tests, docs, the changelog and
-# the workflows.
+# script: format, lint with warnings as errors, tests, docs, the changelog, the
+# workflows and the scripts.
 check:
     cargo fmt --all -- --check
     cargo clippy --locked --all-targets -- -D warnings
@@ -11,6 +11,7 @@ check:
     python3 -m unittest scripts/test_changelog.py
     python3 scripts/changelog.py --lint
     actionlint
+    shellcheck scripts/*.sh
 
 # The checks that take seconds: Cargo.lock agrees with Cargo.toml, and the format.
 fast:

@@ -19,6 +19,9 @@
 //! The events are written by Datastar's SDK ([`datastar`], re-exported), so
 //! their wire format is the SDK's, which Datastar's SDK test suite checks.
 //!
+//! A whole server, a counter in one file, is
+//! [`examples/counter.rs`](https://github.com/radiosilence/askama-datastar/blob/main/examples/counter.rs).
+//!
 //! # A fragment, written once
 //!
 //! A fragment is its own template. The page renders it in place, and a handler
@@ -99,11 +102,13 @@
 //! ```
 //! use axum::Router;
 //! use axum::middleware::from_fn;
-//! use axum::routing::get;
+//! use axum::routing::{get, post};
 //!
+//! // A layer covers the routes added before it: here, the one Datastar posts to.
 //! let app: Router = Router::new()
-//!     .route("/assets/datastar.js", get(askama_datastar::script::serve))
-//!     .layer(from_fn(askama_datastar::require_datastar_on_post));
+//!     .route("/save", post(|| async { "saved" }))
+//!     .layer(from_fn(askama_datastar::require_datastar_on_post))
+//!     .route("/assets/datastar.js", get(askama_datastar::script::serve));
 //!
 //! // What the page's `<script type="module" src="…">` names.
 //! let src = askama_datastar::script::url("/assets/datastar.js");

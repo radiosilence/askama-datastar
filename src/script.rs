@@ -61,8 +61,8 @@ pub async fn serve(RawQuery(query): RawQuery) -> Response {
         .into_response()
 }
 
-/// FNV-1a, 64-bit: enough to notice a change, and the hash the pages that
-/// served their own copy used, so their URLs for a given copy stay the same.
+/// FNV-1a, 64-bit: enough to notice a change, which is all a fingerprint is
+/// for.
 fn fnv1a(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)

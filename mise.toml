@@ -7,6 +7,7 @@ lefthook = "2.2.2"
 # Checks Cargo.lock against RustSec advisories (`just audit`). A prebuilt binary,
 # so a cold CI cache does not compile it.
 cargo-deny = "0.20.2"
-# Lints .github/workflows; shellcheck checks the scripts in `run` steps.
+# Lints .github/workflows; shellcheck checks the scripts in `run` steps, and
+# scripts/ itself.
 actionlint = "1.7.12"
 shellcheck = "0.11.0"

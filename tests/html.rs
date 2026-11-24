@@ -93,6 +93,14 @@ fn markup_answered_on_its_own_is_html() {
 }
 
 #[test]
+fn markup_answered_on_its_own_is_cached_apart_from_datastars_requests() {
+    // A page load and Datastar's request for the same address get different
+    // markup, which a browser's cache must not mix up.
+    let response = axum::response::IntoResponse::into_response(Html::trusted("<p id=\"a\"></p>"));
+    assert_eq!(response.headers()["vary"], "datastar-request");
+}
+
+#[test]
 fn no_markup_can_be_held_in_a_static() {
     static NOTHING: Html = Html::new();
     assert_eq!(NOTHING.as_str(), "");

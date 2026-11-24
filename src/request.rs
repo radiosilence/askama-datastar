@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use serde::de::DeserializeOwned;
 
 /// The header Datastar sets on every request it makes.
-const HEADER: &str = "datastar-request";
+pub(crate) const HEADER: &str = "datastar-request";
 
 /// Whether Datastar sent the request.
 ///
@@ -35,6 +35,10 @@ pub fn is_datastar(headers: &HeaderMap) -> bool {
 /// sibling subdomain counts as the same site. A plain form, such as a sign-in,
 /// posts to a route outside the layer, whose handler checks `Sec-Fetch-Site`
 /// or `Origin` itself.
+///
+/// POST is the one method that needs it. A form sends only GET and POST, and a
+/// script on another site cannot send PUT, PATCH or DELETE at all without a
+/// CORS preflight the server never answers.
 ///
 /// ```
 /// use axum::Router;
