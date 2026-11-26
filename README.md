@@ -200,25 +200,31 @@ A stream ends when the server stops. Datastar retries a broken connection but do
 reopen a stream that ended, and `retry: 'always'` counts each reopening against its ten
 retries; a socket that stops carrying bytes without an error, as a suspended laptop's
 does, looks live to it for good. So a page holding a live stream reopens it itself.
-`reopen(url)` writes the attributes that do, for an element that stays on the page:
+`reopen(url)` writes the attributes that do, for an element of their own that stays on
+the page:
 
 ```rust
 #[derive(Template)]
-#[template(ext = "html", source = "<body{{ live }}>…</body>")]
+#[template(ext = "html", source = "<body>…<div hidden{{ live }}></div></body>")]
 struct Page {
     live: Html, // reopen("/stream")
 }
 ```
 
-They open the stream, and every 5 seconds while the page is shown open it again if it
-ended or has said nothing for 40 seconds, two heartbeats' worth. A stream the server
-refused with a 4xx, such as the 401 of a session a deploy ended, is not asked again
-until the page is shown after being hidden. Returning to a hidden page reopens a stream
-that ended meanwhile; one still open Datastar reopens itself. `@get` aborts the request
-already open to the same URL, so there is only ever one stream. No script of the page's
-own is needed: the expressions keep their state on the element, and the URL is written
-into `data-url` and read with `el.dataset.url`, never into an expression, so any URL
-is safe there.
+The element makes no other requests: the attributes take every request it makes for the
+stream, so a POST from it would hold the stream open or, refused, stop it. They open
+the stream a moment after the page is set up, so the first request carries the page's
+signals, and every 5 seconds while the page is shown open it again if it ended or has
+said nothing for 40 seconds, two heartbeats' worth. A stream refused with 401 or 403,
+such as a session a deploy ended, is not asked again until the page is shown after
+being hidden; any other status is taken for temporary. Returning to a hidden page
+reopens a stream that ended meanwhile; one still open Datastar reopens itself. `@get`
+aborts the request already open to the same URL, so there is only ever one stream.
+
+No script of the page's own is needed: the expressions keep their state in
+`el.__reopen`, and the URL is written into `data-reopen-url` and read with
+`el.dataset.reopenUrl`, never into an expression, so no URL can inject script.
+`reopen` takes only a path on the page's own origin, and panics on anything else.
 
 ## Requests and signals
 
@@ -281,7 +287,7 @@ from a handler serving several files from one route.
 
 `SecurityHeaders` is a layer setting, on every response, a Content Security Policy,
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
-`Referrer-Policy: no-referrer`. `Csp::new()` is the policy every page starts from:
+`Referrer-Policy: same-origin`. `Csp::new()` is the policy every page starts from:
 
 ```text
 default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';
@@ -302,7 +308,13 @@ let sign_in = Csp::new().deny("script-src"); // a page that runs nothing
 
 The layer sets a header only where the response lacks it, so a route needing a stricter
 or wider policy, such as a file served with `sandbox`, sets its own
-(`csp.header_value()`) and keeps it. Nothing adds `'unsafe-inline'`. With eval allowed,
+(`csp.header_value()`) and keeps it. `X-Frame-Options: DENY` repeats
+`frame-ancestors 'none'` for older browsers, so it is left off when the policy allows a
+frame ancestor and when the route set its own policy. The referrer policy is
+`same-origin`, not `no-referrer`: under `no-referrer` a browser sends `Origin: null` on
+a form's POST, which defeats the `Origin` check a sign-in form relies on.
+`form-action` applies to redirects too, so a POST answered with a redirect to another
+origin needs that origin allowed. Nothing adds `'unsafe-inline'`. With eval allowed,
 escaping is what keeps text from running, so text stays out of Datastar expressions and
 in `data-*` attributes read with `el.dataset`.
 

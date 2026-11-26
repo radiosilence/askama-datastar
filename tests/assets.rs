@@ -63,3 +63,28 @@ async fn an_asset_asked_for_any_other_way_is_kept_for_an_hour() {
         );
     }
 }
+
+#[test]
+fn a_path_with_a_query_takes_the_hash_as_another_parameter() {
+    let url = FONT.url("/assets/font.woff2?theme=dark");
+    assert!(url.starts_with("/assets/font.woff2?theme=dark&v="), "{url}");
+}
+
+#[tokio::test]
+async fn the_hash_is_read_from_the_v_parameter_wherever_it_stands() {
+    let hash = FONT
+        .url("/")
+        .strip_prefix("/?")
+        .expect("a query")
+        .to_owned();
+    for uri in [
+        format!("/assets/font.woff2?theme=dark&{hash}"),
+        format!("/assets/font.woff2?{hash}&theme=dark"),
+    ] {
+        assert_eq!(
+            fetch(&uri).await.headers()["cache-control"],
+            "public, max-age=31536000, immutable",
+            "{uri}"
+        );
+    }
+}

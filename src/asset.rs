@@ -37,8 +37,8 @@ use axum::response::{IntoResponse, Response};
 pub struct Asset {
     bytes: &'static [u8],
     content_type: &'static str,
-    /// `v=` and the hash of `bytes`: the query that names this content.
-    query: OnceLock<String>,
+    /// The hash of `bytes`, in hex: the `v` parameter that names this content.
+    hash: OnceLock<String>,
 }
 
 impl Asset {
@@ -49,21 +49,23 @@ impl Asset {
         Self {
             bytes,
             content_type,
-            query: OnceLock::new(),
+            hash: OnceLock::new(),
         }
     }
 
-    /// `path` with the query naming these bytes, `path?v=<hash>`, for the
-    /// page's `href` or `src`. The hash is FNV-1a over the bytes, 64 bits in
-    /// hex: enough to notice a change, which is all a fingerprint is for.
+    /// `path` with the parameter naming these bytes, `path?v=<hash>`, for the
+    /// page's `href` or `src`; `&v=<hash>` when `path` has a query already. The
+    /// hash is FNV-1a over the bytes, 64 bits in hex: enough to notice a
+    /// change, which is all a fingerprint is for.
     #[must_use]
     pub fn url(&self, path: &str) -> String {
-        format!("{path}?{}", self.query())
+        let join = if path.contains('?') { '&' } else { '?' };
+        format!("{path}{join}v={}", self.hash())
     }
 
-    /// The file, cached for a year as immutable when `query` is the one
-    /// [`url`](Self::url) gives, and for an hour otherwise. For a handler that
-    /// serves several assets from one route:
+    /// The file, cached for a year as immutable when `query`'s `v` parameter
+    /// is the hash [`url`](Self::url) gives, and for an hour otherwise. For a
+    /// handler that serves several assets from one route:
     ///
     /// ```
     /// use askama_datastar::Asset;
@@ -84,7 +86,12 @@ impl Asset {
     /// ```
     #[must_use]
     pub fn response(&self, query: Option<&str>) -> Response {
-        let cache = if query == Some(self.query()) {
+        let named = query.is_some_and(|query| {
+            form_urlencoded::parse(query.as_bytes())
+                .find(|(name, _)| name == "v")
+                .is_some_and(|(_, hash)| hash == self.hash())
+        });
+        let cache = if named {
             "public, max-age=31536000, immutable"
         } else {
             "public, max-age=3600"
@@ -105,9 +112,9 @@ impl Asset {
         move |RawQuery(query)| ready(self.response(query.as_deref()))
     }
 
-    fn query(&self) -> &str {
-        self.query
-            .get_or_init(|| format!("v={:016x}", fnv1a(self.bytes)))
+    fn hash(&self) -> &str {
+        self.hash
+            .get_or_init(|| format!("{:016x}", fnv1a(self.bytes)))
     }
 }
 

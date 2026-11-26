@@ -84,8 +84,8 @@
 //! ```
 //!
 //! The page opens it, and opens it again when it ends or goes quiet, with the
-//! attributes [`reopen`] writes on an element that stays put:
-//! `<body{{ live }}>`, where `live` is `reopen("/status")`.
+//! attributes [`reopen`] writes on an element of their own:
+//! `<div hidden{{ live }}></div>`, where `live` is `reopen("/status")`.
 //!
 //! # Signals
 //!

@@ -5,16 +5,23 @@
 //! carrying bytes without an error (what a suspended laptop or a changed
 //! network hands back) looks live to it for good. A page holding a live stream
 //! reopens it itself, and these attributes are how, with no script of the
-//! page's own: Datastar's expressions, on the element they are written on,
-//! keep the little state they need as properties of that element.
+//! page's own: Datastar's expressions keep the little state they need in one
+//! property of their element, `el.__reopen`.
 //!
-//! - `data-on:datastar-fetch` follows this element's requests: how many are
-//!   open (`started` and `finished`), when the stream last said anything (any
+//! They go on an element of their own, `<div hidden{{ live }}></div>`, since
+//! they count every request their element makes: a POST from the same element
+//! would hold the stream open while in flight, and a refused one would stop it.
+//!
+//! - `data-on:datastar-fetch` follows the element's requests: how many are open
+//!   (`started` and `finished`), when the stream last said anything (any
 //!   `datastar-*` event, the heartbeat [`stream`](crate::stream) sends
-//!   included, or a request starting), and whether the server refused it (a
-//!   4xx, such as the 401 of a session a deploy ended, which asking again does
-//!   not get past; a frame from a later request lifts it).
-//! - `data-init` opens the stream, once the attribute before it is listening.
+//!   included, or a request starting), and whether the server refused it. A
+//!   401 or 403, such as a session a deploy ended, is a refusal, which asking
+//!   again does not get past; every other status is taken for temporary. The
+//!   next request to start lifts it.
+//! - `data-init` opens the stream after a moment, once every attribute on the
+//!   page has been applied, so the first request carries the page's signals
+//!   whichever comes first in the document.
 //! - `data-on-interval`, every 5 seconds while the page is shown and not
 //!   refused, reopens a stream that ended, or one that has said nothing for 40
 //!   seconds, against a heartbeat every 15. A server answering with an error,
@@ -34,25 +41,28 @@
 
 use crate::Html;
 
-/// What follows `data-url`, the same for every stream. Nothing in it comes
-/// from outside: the URL is read from the element with `el.dataset.url`, so
-/// whatever it holds stays text.
+/// What follows `data-reopen-url`, the same for every stream. Nothing in it
+/// comes from outside: the URL is read from the element with
+/// `el.dataset.reopenUrl`, so whatever it holds stays text.
 ///
-/// Datastar applies an element's attributes in the order they are written, and
-/// `@get` announces its start before it first waits, so `data-on:datastar-fetch`
-/// comes before `data-init`: the other way round, the first stream's start goes
-/// unheard and the page takes it for ended.
+/// Each expression makes the element's state the first time one runs. Datastar
+/// applies an element's attributes in the order they are written, so
+/// `data-on:datastar-fetch` comes first and hears every request the element
+/// starts.
 const ATTRIBUTES: &str = concat!(
-    r#" data-on:datastar-fetch="evt.detail.el === el && ("#,
-    r#"evt.detail.type === 'started' ? (el.open = (el.open || 0) + 1, el.seen = Date.now())"#,
-    r#" : evt.detail.type === 'finished' ? el.open = Math.max(0, (el.open || 0) - 1)"#,
-    r#" : evt.detail.type === 'error' ? el.refused = evt.detail.argsRaw.status < 500"#,
-    r#" : evt.detail.type.startsWith('datastar-') && (el.refused = false, el.seen = Date.now()))""#,
-    r#" data-init="@get(el.dataset.url)""#,
-    r#" data-on-interval__duration.5s="!el.refused && !document.hidden"#,
-    r#" && (!el.open || Date.now() - el.seen > 40000) && @get(el.dataset.url)""#,
-    r#" data-on:visibilitychange__document="document.hidden"#,
-    r#" || (el.seen = Date.now(), el.open || @get(el.dataset.url))""#,
+    r#" data-on:datastar-fetch="evt.detail.el === el && (r => "#,
+    r#"evt.detail.type === 'started' ? (r.open++, r.seen = Date.now(), r.refused = false)"#,
+    r#" : evt.detail.type === 'finished' ? r.open = Math.max(0, r.open - 1)"#,
+    r#" : evt.detail.type === 'error' ? r.refused = ['401', '403'].includes(evt.detail.argsRaw.status)"#,
+    r#" : evt.detail.type.startsWith('datastar-') && (r.seen = Date.now()))"#,
+    r#"(el.__reopen ??= {open: 0, seen: Date.now(), refused: false})""#,
+    r#" data-init__delay.10ms="@get(el.dataset.reopenUrl)""#,
+    r#" data-on-interval__duration.5s="(r => !r.refused && !document.hidden"#,
+    r#" && (!r.open || Date.now() - r.seen > 40000) && @get(el.dataset.reopenUrl))"#,
+    r#"(el.__reopen ??= {open: 0, seen: Date.now(), refused: false})""#,
+    r#" data-on:visibilitychange__document="document.hidden || (r => (r.seen = Date.now(),"#,
+    r#" r.open || @get(el.dataset.reopenUrl)))"#,
+    r#"(el.__reopen ??= {open: 0, seen: Date.now(), refused: false})""#,
 );
 
 /// How long the stream may say nothing before the page takes it for lost, as
@@ -60,37 +70,43 @@ const ATTRIBUTES: &str = concat!(
 #[cfg(test)]
 pub(crate) const LOST: std::time::Duration = std::time::Duration::from_secs(40);
 
-/// Attributes that open the live stream at `url` and keep it open, for the
-/// opening tag of an element that stays on the page as long as the stream
-/// should, such as `<body>`:
+/// Attributes that open the live stream at `url` and keep it open, for an
+/// element of their own that stays on the page as long as the stream should:
 ///
 /// ```
 /// use askama::Template;
 /// use askama_datastar::{Html, reopen};
 ///
 /// #[derive(Template)]
-/// #[template(ext = "html", source = "<body{{ live }}></body>")]
-/// struct Page {
+/// #[template(ext = "html", source = "<div hidden{{ live }}></div>")]
+/// struct Live {
 ///     live: Html,
 /// }
 ///
-/// let page = Page { live: reopen("/stream?tab=queue") }.render()?;
-/// assert!(page.starts_with(r#"<body data-url="/stream?tab=queue" data-on:datastar-fetch="#));
+/// let live = Live { live: reopen("/stream?tab=queue") }.render()?;
+/// assert!(live.starts_with(r#"<div hidden data-reopen-url="/stream?tab=queue" "#));
 /// # Ok::<(), askama::Error>(())
 /// ```
 ///
 /// The text starts with a space, so it follows the tag's name or its other
-/// attributes directly. `url` is escaped as an attribute value and read back
-/// with `el.dataset.url`, never written into an expression, so any URL is safe
-/// here, one built from what a person typed included.
+/// attributes directly. The element should make no other requests, since the
+/// attributes take every request it makes for the stream. `url` is escaped as
+/// an attribute value and read back with `el.dataset.reopenUrl`, never written
+/// into an expression, so no URL can inject script.
 ///
-/// A stream the page opens some other way, such as one that carries a form,
-/// is not reopened by these; they own the requests to `url` made from this
-/// element.
+/// # Panics
+///
+/// If `url` is not a path on the page's own origin: it must start with `/`,
+/// and not with `//` or `/\`, which a browser reads as another host. A stream
+/// is the server's own route, so a URL from elsewhere is a mistake.
 #[must_use]
 pub fn reopen(url: &str) -> Html {
-    let mut attributes = String::with_capacity(url.len() + 16 + ATTRIBUTES.len());
-    attributes.push_str(r#" data-url=""#);
+    assert!(
+        url.starts_with('/') && !url.starts_with("//") && !url.starts_with("/\\"),
+        "{url:?} is not a path on this origin: a live stream is reopened from the page's own server"
+    );
+    let mut attributes = String::with_capacity(url.len() + 24 + ATTRIBUTES.len());
+    attributes.push_str(r#" data-reopen-url=""#);
     for c in url.chars() {
         match c {
             '&' => attributes.push_str("&amp;"),

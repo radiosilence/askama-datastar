@@ -83,6 +83,12 @@ fn a_source_cannot_end_its_directive() {
 }
 
 #[test]
+#[should_panic(expected = "use deny(\"script-src\")")]
+fn none_is_denied_not_allowed() {
+    let _ = Csp::new().allow("script-src", "'none'");
+}
+
+#[test]
 #[should_panic(expected = "is not a CSP directive name")]
 fn a_directive_name_is_one_word() {
     let _ = Csp::new().allow("img-src https:", "blob:");
@@ -109,7 +115,8 @@ async fn every_response_carries_the_security_headers() {
         );
         assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff", "{uri}");
         assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY", "{uri}");
-        assert_eq!(headers[header::REFERRER_POLICY], "no-referrer", "{uri}");
+        // `no-referrer` would send `Origin: null` on a form's POST.
+        assert_eq!(headers[header::REFERRER_POLICY], "same-origin", "{uri}");
     }
 }
 
@@ -147,4 +154,35 @@ async fn a_header_the_handler_set_is_kept() {
         "a second policy would narrow the route's"
     );
     assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+}
+
+#[tokio::test]
+async fn frames_are_refused_twice_only_while_the_policy_refuses_them() {
+    let framed = Router::new()
+        .route("/", get(|| async { "a widget" }))
+        .layer(SecurityHeaders::new(
+            &Csp::new().allow("frame-ancestors", "https://host.example"),
+        ));
+    let response = fetch(framed, "/").await;
+    assert!(
+        !response.headers().contains_key(header::X_FRAME_OPTIONS),
+        "X-Frame-Options: DENY would refuse the ancestor the policy allows"
+    );
+
+    let own_policy = Router::new()
+        .route(
+            "/",
+            get(|| async {
+                (
+                    [(header::CONTENT_SECURITY_POLICY, "frame-ancestors *")],
+                    "embeddable",
+                )
+            }),
+        )
+        .layer(SecurityHeaders::default());
+    let response = fetch(own_policy, "/").await;
+    assert!(
+        !response.headers().contains_key(header::X_FRAME_OPTIONS),
+        "X-Frame-Options contradicts the route's own policy"
+    );
 }

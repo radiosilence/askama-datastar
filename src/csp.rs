@@ -24,6 +24,9 @@ use sha2::{Digest as _, Sha256};
 /// `data:` images are there for the glyphs a stylesheet carries inline, such as
 /// a checkbox's tick. Nothing allows inline script or style: that is the
 /// policy's point, and no method here adds `'unsafe-inline'` for you.
+/// `form-action` governs where a form's submission ends up, redirects
+/// included: a POST answered with a redirect to another origin, such as a
+/// sign-in handing back to an OAuth client, needs that origin allowed too.
 ///
 /// ```
 /// use askama_datastar::Csp;
@@ -95,8 +98,9 @@ impl Csp {
 
     /// Adds `source` to `directive`, adding the directive if the policy lacks
     /// it: `allow("img-src", "blob:")` for previews of files about to be
-    /// uploaded, `allow("form-action", "https://auth.example")` for a form
-    /// posting elsewhere. A directive that was `'none'` becomes `source` alone.
+    /// uploaded, `allow("form-action", "https://client.example")` for a form
+    /// posting elsewhere or answered with a redirect there. A directive that
+    /// was `'none'` becomes `source` alone.
     ///
     /// A directive the policy lacked no longer falls back to `default-src`, so
     /// `allow("media-src", "blob:")` refuses media from this origin unless
@@ -106,12 +110,17 @@ impl Csp {
     ///
     /// If `directive` is not lowercase letters and hyphens, or `source` is
     /// empty or holds whitespace, a control character, `;` or `,`, any of
-    /// which would let it end the directive or the policy early. Both are the
+    /// which would let it end the directive or the policy early; or if
+    /// `source` is `'none'`, which is [`deny`](Self::deny)'s. Both are the
     /// program's own text, so a panic is a mistake caught where it is made.
     #[must_use]
     pub fn allow(mut self, directive: &'static str, source: impl Into<String>) -> Self {
         let source = source.into();
         assert_directive(directive);
+        assert!(
+            source != "'none'",
+            "allow({directive:?}, \"'none'\") would be undone by any other source: use deny({directive:?})"
+        );
         assert!(
             !source.is_empty()
                 && source
@@ -166,6 +175,16 @@ impl Csp {
     pub fn header_value(&self) -> HeaderValue {
         HeaderValue::try_from(self.to_string())
             .expect("every directive and source was checked as it was added")
+    }
+}
+
+impl Csp {
+    /// Whether `frame-ancestors` is `'none'`, which `X-Frame-Options: DENY`
+    /// repeats.
+    pub(crate) fn denies_frames(&self) -> bool {
+        self.directives
+            .iter()
+            .any(|(name, sources)| *name == "frame-ancestors" && sources == &["'none'"])
     }
 }
 

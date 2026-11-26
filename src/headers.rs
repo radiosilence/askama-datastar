@@ -20,13 +20,23 @@ use crate::Csp;
 /// Content-Security-Policy: <the policy it was given>
 /// X-Content-Type-Options: nosniff
 /// X-Frame-Options: DENY
-/// Referrer-Policy: no-referrer
+/// Referrer-Policy: same-origin
 /// ```
 ///
-/// `X-Frame-Options` repeats `frame-ancestors 'none'` for browsers that read
-/// only the older header. A header a handler set is kept as it is, so a route
-/// with its own policy, such as an image served with `sandbox`, sets it on its
-/// response.
+/// A header a handler set is kept as it is, so a route with its own policy,
+/// such as an image served with `sandbox`, sets it on its response.
+///
+/// `X-Frame-Options: DENY` repeats `frame-ancestors 'none'` for browsers that
+/// read only the older header, so it is sent only while the policy says so: not
+/// when the policy allows a frame ancestor, and not on a response that set its
+/// own policy, whose `frame-ancestors` it might contradict.
+///
+/// `Referrer-Policy` is `same-origin` rather than `no-referrer`: a browser sends
+/// `Origin: null` on a form's POST under `no-referrer`, which defeats the
+/// `Origin` check a plain form such as a sign-in relies on (see
+/// [`require_datastar_on_post`](crate::require_datastar_on_post)). Under
+/// `same-origin`, requests to this origin carry their origin and referrer, and
+/// requests anywhere else carry neither.
 ///
 /// ```
 /// use askama_datastar::{Csp, SecurityHeaders};
@@ -40,6 +50,7 @@ use crate::Csp;
 #[derive(Clone, Debug)]
 pub struct SecurityHeaders {
     csp: HeaderValue,
+    deny_frames: bool,
 }
 
 impl SecurityHeaders {
@@ -48,11 +59,14 @@ impl SecurityHeaders {
     pub fn new(csp: &Csp) -> Self {
         Self {
             csp: csp.header_value(),
+            deny_frames: csp.denies_frames(),
         }
     }
 }
 
-/// The headers with [`Csp::new`]'s policy, for a server with no script.
+/// The headers with [`Csp::new`]'s policy, for pages that do not load
+/// Datastar. A server whose pages run no script at all says so with
+/// `SecurityHeaders::new(&Csp::new().deny("script-src"))`.
 impl Default for SecurityHeaders {
     fn default() -> Self {
         Self::new(&Csp::new())
@@ -66,6 +80,7 @@ impl<S> tower_layer::Layer<S> for SecurityHeaders {
         SetSecurityHeaders {
             inner,
             csp: self.csp.clone(),
+            deny_frames: self.deny_frames,
         }
     }
 }
@@ -75,6 +90,7 @@ impl<S> tower_layer::Layer<S> for SecurityHeaders {
 pub struct SetSecurityHeaders<S> {
     inner: S,
     csp: HeaderValue,
+    deny_frames: bool,
 }
 
 impl<S, Request, Body> tower_service::Service<Request> for SetSecurityHeaders<S>
@@ -93,6 +109,7 @@ where
         SecurityHeadersFuture {
             inner: self.inner.call(request),
             csp: Some(self.csp.clone()),
+            deny_frames: self.deny_frames,
         }
     }
 }
@@ -104,6 +121,7 @@ pin_project! {
         #[pin]
         inner: F,
         csp: Option<HeaderValue>,
+        deny_frames: bool,
     }
 }
 
@@ -117,20 +135,21 @@ where
         let this = self.project();
         let mut response = ready!(this.inner.poll(cx))?;
         let headers = response.headers_mut();
-        if let Some(csp) = this.csp.take() {
-            headers
-                .entry(header::CONTENT_SECURITY_POLICY)
-                .or_insert(csp);
+        let own_policy = headers.contains_key(header::CONTENT_SECURITY_POLICY);
+        if let Some(csp) = this.csp.take().filter(|_| !own_policy) {
+            headers.insert(header::CONTENT_SECURITY_POLICY, csp);
+            if *this.deny_frames {
+                headers
+                    .entry(header::X_FRAME_OPTIONS)
+                    .or_insert(HeaderValue::from_static("DENY"));
+            }
         }
         headers
             .entry(header::X_CONTENT_TYPE_OPTIONS)
             .or_insert(HeaderValue::from_static("nosniff"));
         headers
-            .entry(header::X_FRAME_OPTIONS)
-            .or_insert(HeaderValue::from_static("DENY"));
-        headers
             .entry(header::REFERRER_POLICY)
-            .or_insert(HeaderValue::from_static("no-referrer"));
+            .or_insert(HeaderValue::from_static("same-origin"));
         Poll::Ready(Ok(response))
     }
 }
