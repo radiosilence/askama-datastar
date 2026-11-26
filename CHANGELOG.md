@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Changed
+
+- **Docs for 0.3's scope.** The crate's description names what it now holds, and `reopen_on` says that every signal it names must be declared on each page that places it, since an undeclared one stops the stream reopening without a console message.
+
 ## 0.3.0
 
 ### Added
