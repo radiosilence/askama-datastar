@@ -75,7 +75,7 @@ pub(crate) const LOST: std::time::Duration = std::time::Duration::from_secs(40);
 /// }
 ///
 /// let page = Page { live: reopen("/stream?tab=queue") }.render()?;
-/// assert!(page.starts_with(r#"<body data-url="/stream?tab=queue" data-init="#));
+/// assert!(page.starts_with(r#"<body data-url="/stream?tab=queue" data-on:datastar-fetch="#));
 /// # Ok::<(), askama::Error>(())
 /// ```
 ///
