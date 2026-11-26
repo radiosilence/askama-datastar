@@ -15,7 +15,8 @@
 //!   [`require_datastar_on_post`] refuses a POST that did not come from one.
 //! - [`script`] serves Datastar's own script, vendored and pinned, under a
 //!   fingerprinted URL, and [`Asset`] any other file embedded in the binary.
-//! - [`reopen`] writes the attributes that keep a page's live stream open.
+//! - [`reopen`] writes the attributes that keep a page's live stream open, and
+//!   [`reopen_on`] those that also open it afresh when signals change.
 //! - [`Csp`] holds a page's Content Security Policy, and [`SecurityHeaders`]
 //!   sets it on every response with the other security headers.
 //!
@@ -157,7 +158,7 @@ pub use asset::Asset;
 pub use csp::Csp;
 pub use headers::SecurityHeaders;
 pub use html::Html;
-pub use reopen::reopen;
+pub use reopen::{reopen, reopen_on};
 pub use request::{Signals, is_datastar, require_datastar_on_post};
 pub use sse::{events, stream};
 
