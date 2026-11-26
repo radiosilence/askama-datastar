@@ -35,7 +35,14 @@ in that server. Each piece works alone, so a server can take one without the res
   seconds without an event, and `reopen` takes 40 seconds of silence for a lost stream;
   tested in `tests/responses.rs` and `src/reopen.rs`.
 - **No URL reaches an expression.** `reopen` writes the URL into `data-reopen-url` and
-  every expression reads `el.dataset.reopenUrl`; tested in `tests/reopen.rs`.
+  every expression reads `el.dataset.reopenUrl`; `page::go` writes it into `data-go`, and
+  the history effect reads the `url` signal; tested in `tests/reopen.rs` and
+  `tests/pages.rs`.
+- **A live stream ends.** `live::serve` ends a stream after `Frame::LIFETIME`, which bounds
+  how long a page sits on a connection that died unnoticed; tested in `tests/live.rs`.
+- **An address names one page.** `page::serve` draws the same body whole and in place, and
+  the address it reports leaves out Datastar's `datastar` parameter; tested in
+  `tests/pages.rs` and `src/page.rs`.
 - **A route's own header wins.** `SecurityHeaders` adds a header only where the response
   lacks it; tested in `tests/security.rs`.
 - **A page and a fragment at one address stay apart in a cache.** `Html`'s response sends
@@ -78,6 +85,9 @@ just fmt
 | `src/asset.rs` | `Asset`: an embedded file under a fingerprinted URL |
 | `src/csp.rs` | `Csp`: the Content Security Policy builder |
 | `src/headers.rs` | `SecurityHeaders`: the layer setting the CSP and the other security headers |
+| `src/page.rs` | `Page`, `Layout`, `Body`, `View`, `serve`, `shown`, `go`: pages drawn whole or in place |
+| `src/live.rs` | `Live`, `Frame`, `Last`, `serve`: the live stream's loop |
+| `src/escaping.rs` | `Guard`, `escaped`, `get`: the escaping guard for applications' tests |
 | `assets/datastar.js` | Datastar's `bundles/datastar.js` at `VERSION`; written by `scripts/datastar.sh` |
-| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`) |
+| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`), pages (`pages.rs`), live streams (`live.rs`), the escaping guard (`escaping.rs`) |
 | `examples/counter.rs` | The README's quick start, whole; clippy builds it and `tests/readme.rs` fails when the README's copy differs |

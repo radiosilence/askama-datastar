@@ -13,7 +13,7 @@ use std::ops::Deref;
 use askama::Template;
 use axum::http::{HeaderValue, header};
 use axum::response::{IntoResponse, Response};
-use datastar::prelude::PatchElements;
+use datastar::prelude::{ElementPatchMode, PatchElements};
 
 use crate::request::HEADER;
 
@@ -90,6 +90,24 @@ impl Html {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// A patch that empties the element `selector` names, keeping the element: how
+/// a region the server filled, such as a preview, is closed.
+///
+/// ```
+/// let close = askama_datastar::clear("#preview");
+/// ```
+///
+/// Datastar morphs a patch's elements into the page by their ids, so sending
+/// no markup by id changes nothing; this names the element and replaces what
+/// is inside it with nothing. A region whose closed state has markup of its
+/// own, such as a button to open it again, is a template sent like any other.
+#[must_use]
+pub fn clear(selector: &str) -> PatchElements {
+    PatchElements::new("")
+        .selector(selector)
+        .mode(ElementPatchMode::Inner)
 }
 
 /// `markup` with HTML's line breaks: CRLF and lone CRs as LF.
