@@ -141,7 +141,7 @@ async fn actions_answer_with_as_little_as_they_can() {
         added.contains("data: selector #error"),
         "the error cleared: {added}"
     );
-    assert!(board.add("lichen") == 1);
+    assert_eq!(board.add("lichen"), 1);
 
     let deleted = post(&router, "/notes/0/delete", "{}").await;
     assert!(
