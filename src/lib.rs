@@ -19,6 +19,13 @@
 //!   [`reopen_on`] those that also open it afresh when signals change.
 //! - [`Csp`] holds a page's Content Security Policy, and [`SecurityHeaders`]
 //!   sets it on every response with the other security headers.
+//! - [`address`], [`history`] and [`go`] keep a page loaded in place on the
+//!   address that names it, [`View`] reads an address's query leniently, and
+//!   [`clear`] empties a region.
+//! - [`paced`] spaces a live stream's changes out and ends it after a
+//!   lifetime, and [`Last`] sends a region only when it differs.
+//! - [`escaping`] is a guard for an application's tests: every answer escapes
+//!   text exactly once.
 //!
 //! The events are written by Datastar's SDK ([`datastar`], re-exported), so
 //! their wire format is the SDK's, which Datastar's SDK test suite checks.
@@ -146,9 +153,13 @@
 //! [axum]: https://docs.rs/axum
 
 mod asset;
+mod attr;
 mod csp;
+pub mod escaping;
 pub mod headers;
 mod html;
+mod navigation;
+mod pace;
 mod reopen;
 mod request;
 pub mod script;
@@ -157,7 +168,9 @@ mod sse;
 pub use asset::Asset;
 pub use csp::Csp;
 pub use headers::SecurityHeaders;
-pub use html::Html;
+pub use html::{Html, clear};
+pub use navigation::{View, address, go, history};
+pub use pace::{Last, Pace, paced};
 pub use reopen::{reopen, reopen_on};
 pub use request::{Signals, is_datastar, require_datastar_on_post};
 pub use sse::{events, stream};

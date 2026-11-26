@@ -18,6 +18,10 @@ that each work alone:
 | `script` | Datastar's script, vendored and pinned, served under a fingerprinted URL |
 | `Asset` | Any other file embedded in the binary, served under a fingerprinted URL |
 | `Csp`, `SecurityHeaders` | The Content Security Policy every page starts from, and a layer setting it with the other security headers |
+| `View`, `address`, `history`, `go` | A page loaded in place kept on the address that names it |
+| `paced`, `Last` | A live stream's changes spaced out and ended after a lifetime, and a region sent only when it differs |
+| `clear` | A patch emptying a region the server filled |
+| `escaping` | A guard for an application's tests: every answer escapes text exactly once |
 
 ## Install
 
@@ -156,6 +160,24 @@ A patch targets something other than the ids with the SDK's builder methods:
 Html::render(&row)?.patch().selector("#rows").mode(ElementPatchMode::Append)
 ```
 
+### Where ids go
+
+Datastar morphs a patch into the page by the ids of its top-level elements, so
+an id is a promise that the server sends that region again. An id goes only on
+a region the server sends again, and is declared once, in that region's own
+template, so the page and the patch cannot disagree on it. One region sent
+whole is preferred to many small ones: it is one template, one id and one
+comparison in a stream. A repeated control that changes everywhere at once,
+such as a button naming one person on every row that does, is found by a
+`data-` attribute rather than by ids of its own. A form carries an id only
+where something outside it names it, as an input's `form=` does.
+
+A region the server filled that the person closes, such as a preview, is
+emptied with `clear("#preview")`, which keeps the element and replaces what is
+inside it with nothing. Sending a region with no markup by id would change
+nothing, since there is no element to match. A region whose closed state has
+markup of its own is a template sent like any other.
+
 ## Answers and streams
 
 `events` answers with patches and signal updates together, in order:
@@ -231,6 +253,129 @@ afresh when they change: `reopen_on("/stream", &["tab", "filters"])` adds an eff
 reads them. The effect skips its first run, so the stream is opened once as the page
 starts rather than by the effect and again by the delayed start, which would abort the
 first request on every page load.
+
+## Pages and live streams
+
+How an application puts its pages and streams together is its own
+architecture; this crate gives it the glue. [`examples/notes.rs`](examples/notes.rs)
+is a whole application built this way, a notes board whose list updates in
+every open tab (`cargo run --example notes`). The excerpts below are from it.
+
+### A page, whole or in place
+
+A page following a link in place (`data-on:click__prevent="@get(el.href)"`)
+keeps its document, and the server answers with the new body, its title, and
+its address. One function of the application's draws a page either way, so a
+reload, a shared link, back and forward show what the address names:
+
+```rust
+fn show(notes: &Notes, headers: &HeaderMap, uri: &Uri, title: &str, body: Html) -> Response {
+    let url = address(uri); // the path and query, less Datastar's own parameter
+    if is_datastar(headers) {
+        return events([
+            body.patch().selector("#main").mode(ElementPatchMode::Inner).into(),
+            render(&Title { name: title }).patch().into(),
+            PatchSignals::new(serde_json::json!({ "url": url }).to_string()).into(),
+        ]);
+    }
+    render(&Document {
+        signals: serde_json::json!({ "url": url, "text": "" }).to_string(), // data-signals="{{ signals }}"
+        history: history("url"),          // <body …{{ history }}>
+        live: reopen_on("/live", &["url"]), // the stream, opened afresh when the page moves
+        body,                             // <main id="main">{{ body }}</main>
+        // …
+    })
+    .into_response()
+}
+
+async fn index(State(notes): State<Notes>, headers: HeaderMap, OriginalUri(uri): OriginalUri, View(search): View<Search>) -> Response {
+    show(&notes, &headers, &uri, "notes", Index::of(&notes, search.q))
+}
+```
+
+- `address(&uri)` is the request's address as the person sees it, less the
+  `datastar` parameter Datastar adds to a GET. It takes axum's `OriginalUri`,
+  which keeps the prefix a nested router strips.
+- `history(signal)` writes the attributes that push the address onto the
+  history when the signal changes, and load the page whole when back or
+  forward reaches an address the page does not show.
+- `View<T>` reads the query leniently, as `Signals<T>` reads signals: a query
+  that does not parse is `T::default()`, since an address is something a
+  person types and keeps. A key may repeat, filling a `Vec`.
+  `View::of(url)` reads the same from an address, as a stream does.
+- `go(path)` is the in-place answer where a browser would be redirected: a
+  patch that loads the address whole.
+
+### A live stream
+
+A live stream redraws what each change touches. `paced(changes, Pace)` passes
+a stream's items on at most once per throttle (250 ms), the first at once, and
+ends after a lifetime (a minute); `Last` sends a region only when it differs
+from what was last sent:
+
+```rust
+async fn live(State(notes): State<Notes>, Signals(shown): Signals<Shown>) -> Response {
+    let changes = /* every change to `notes.changed`, starting with the state as it is */;
+    let on_index = shown.url.split('?').next() == Some("/");
+    let View(search) = View::<Search>::of(&shown.url);
+    let (mut count, mut list) = (Last::new(), Last::new());
+    stream(paced(changes, Pace::default()).flat_map(move |()| {
+        let mut events = Vec::new();
+        events.extend(count.send(&render(&Count { n: notes.matching("").len() })));
+        if on_index {
+            events.extend(list.send(&render(&List { notes: notes.matching(&search.q) })));
+        }
+        futures_util::stream::iter(events)
+    }))
+}
+```
+
+`paced` does not merge changes: a source that gathers what happened since it
+was last asked, as a `tokio::sync::watch` does, turns a burst inside the
+throttle into one item by itself. The lifetime bounds how long a page sits on
+a stream that died without either end noticing, as a suspended phone's does;
+`reopen` opens another within seconds. The stream draws the page its address
+signal names and never follows navigation, since `reopen_on` that signal
+opens it afresh when the page moves. `Last::comparing(f)` compares what `f`
+keeps of the markup, for markup that names something afresh on every render.
+
+## The escaping guard
+
+A fragment spliced into a template as text, rather than as `Html`, comes out
+escaped, and the page shows its own markup as raw HTML; text spliced in as
+markup comes out unescaped, and runs. A page checked with ordinary text in it
+shows neither. `escaping::Guard` checks answers drawn with markup-shaped text
+in every field a person controls. From the notes example's test
+([`tests/notes.rs`](tests/notes.rs)):
+
+```rust
+const HOSTILE: &str = r#"<em>hostile "q" & 'x'</em>"#;
+
+let id = board.add(HOSTILE);
+let guard = Guard::new(&[HOSTILE]).markup(include_str!("../examples/notes.rs"));
+for (url, shows) in [("/", true), (&search[..], true), (&note[..], true), ("/about", false)] {
+    for in_place in [false, true] {
+        let (status, answer) = get(&router, url, in_place, WAIT).await;
+        found.extend(guard.problems(&answer).iter().map(|p| format!("{url}: {p}")));
+        if shows && !answer.contains(&escaped(HOSTILE)) {
+            found.push(format!("{url}: the note is missing"));
+        }
+    }
+    let (_, answer) = get(&router, &live(url), true, WAIT).await;
+    found.extend(guard.problems(&answer).iter().map(|p| format!("{url} live: {p}")));
+}
+```
+
+`Guard::problems` finds markup of the application's own escaped (`&#60;` or
+`&lt;` before an element name it writes), text escaped twice (`&#38;#60;`,
+`&amp;lt;`), and the hostile text left as markup outside an event stream's
+`data: signals` lines, which are JSON. The element names come from wherever
+the markup lives: `Guard::templates(dir)` reads a templates directory,
+passing over files that are not text,
+`Guard::markup(text)` any markup, `Guard::elements(names)` names given.
+`escaped` is askama's escaping, the form a page shows text in. `get` reads an
+answer through the router, cutting a live stream off after the wait; a stream
+is asked for with its signals in the `datastar` query parameter.
 
 ## Requests and signals
 

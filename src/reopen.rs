@@ -97,7 +97,8 @@ pub(crate) const LOST: std::time::Duration = std::time::Duration::from_secs(40);
 /// # Panics
 ///
 /// If `url` is not a path on the page's own origin: it must start with `/`,
-/// and not with `//` or `/\`, which a browser reads as another host. A stream
+/// and not with `//` or `/\`, which a browser reads as another host, nor
+/// hold a control or space character, which a browser strips. A stream
 /// is the server's own route, so a URL from elsewhere is a mistake.
 #[must_use]
 pub fn reopen(url: &str) -> Html {
@@ -136,34 +137,16 @@ pub fn reopen(url: &str) -> Html {
 /// `.`: each is written into the expression, so it is the program's own text.
 #[must_use]
 pub fn reopen_on(url: &str, signals: &[&'static str]) -> Html {
-    assert!(
-        url.starts_with('/') && !url.starts_with("//") && !url.starts_with("/\\"),
-        "{url:?} is not a path on this origin: a live stream is reopened from the page's own server"
-    );
+    crate::attr::assert_on_origin(url);
     let mut attributes = String::with_capacity(url.len() + 24 + ATTRIBUTES.len());
     attributes.push_str(r#" data-reopen-url=""#);
-    for c in url.chars() {
-        match c {
-            '&' => attributes.push_str("&amp;"),
-            '"' => attributes.push_str("&quot;"),
-            '\'' => attributes.push_str("&#39;"),
-            '<' => attributes.push_str("&lt;"),
-            '>' => attributes.push_str("&gt;"),
-            c => attributes.push(c),
-        }
-    }
+    crate::attr::escape(url, &mut attributes);
     attributes.push('"');
     attributes.push_str(ATTRIBUTES);
     if !signals.is_empty() {
         attributes.push_str(r#" data-effect=""#);
         for signal in signals {
-            assert!(
-                !signal.is_empty()
-                    && signal
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.')),
-                "{signal:?} is not a signal name"
-            );
+            crate::attr::assert_signal_name(signal);
             attributes.push('$');
             attributes.push_str(signal);
             attributes.push_str("; ");

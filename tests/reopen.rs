@@ -16,7 +16,7 @@ fn the_url_is_an_escaped_attribute_value() {
     let attributes = reopen(r#"/stream?a=1&b="2"&c='<3>'"#);
     assert!(
         attributes.starts_with(
-            r#" data-reopen-url="/stream?a=1&amp;b=&quot;2&quot;&amp;c=&#39;&lt;3&gt;&#39;" "#
+            r#" data-reopen-url="/stream?a=1&#38;b=&#34;2&#34;&#38;c=&#39;&#60;3&#62;&#39;" "#
         ),
         "{attributes}"
     );
@@ -25,7 +25,7 @@ fn the_url_is_an_escaped_attribute_value() {
 #[test]
 fn no_expression_holds_the_url() {
     let plain = reopen("/stream");
-    let hostile = reopen(r#"/stream"); alert(1); ("#);
+    let hostile = reopen(r#"/stream");alert(1);("#);
     assert_eq!(
         after_url(&plain),
         after_url(&hostile),

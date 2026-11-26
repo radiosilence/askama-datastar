@@ -139,3 +139,16 @@ async fn an_element_can_be_removed_by_selector() {
         "event: datastar-patch-elements\ndata: selector #row-7\ndata: mode remove\n\n",
     );
 }
+
+#[tokio::test]
+async fn clearing_a_region_names_it_and_sends_no_markup() {
+    assert_eq!(
+        body(events([askama_datastar::clear("#preview").into()])).await,
+        concat!(
+            "event: datastar-patch-elements\n",
+            "data: selector #preview\n",
+            "data: mode inner\n",
+            "\n",
+        ),
+    );
+}
