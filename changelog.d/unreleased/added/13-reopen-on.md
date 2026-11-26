@@ -1,0 +1,1 @@
+- **`reopen_on(url, signals)`: a live stream that also follows signals.** It adds an effect that opens the stream afresh when any of the signals changes, and skips the effect's first run, so the stream opens once as the page starts. A page that wrote such an effect beside `reopen` opened it twice, the second request aborting the first.
