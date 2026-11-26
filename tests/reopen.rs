@@ -25,7 +25,7 @@ fn the_url_is_an_escaped_attribute_value() {
 #[test]
 fn no_expression_holds_the_url() {
     let plain = reopen("/stream");
-    let hostile = reopen(r#"/stream"); alert(1); ("#);
+    let hostile = reopen(r#"/stream");alert(1);("#);
     assert_eq!(
         after_url(&plain),
         after_url(&hostile),
