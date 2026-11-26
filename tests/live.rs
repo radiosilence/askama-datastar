@@ -1,5 +1,6 @@
 //! A live stream's loop: everything drawn once, a redraw per change at most
-//! every throttle, unchanged regions left out, and an end after its lifetime.
+//! every throttle, unchanged regions left out, a drawer's own wake, and an end
+//! after the lifetime.
 
 #![allow(clippy::unused_async_trait_impl)]
 
@@ -7,96 +8,53 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use askama_datastar::Html;
-use askama_datastar::live::{self, Frame, Last, Live};
-use axum::Router;
-use axum::body::{Body, BodyDataStream};
-use axum::http::Request;
+use askama_datastar::live::{Changes, Draw, Last, Timing, redraws};
 use axum::response::sse::Event;
-use axum::routing::get;
-use futures_util::StreamExt as _;
+use futures_util::{Stream, StreamExt as _};
 use tokio::sync::{Notify, watch};
-use tower::ServiceExt as _;
 
-#[derive(Clone)]
-struct App {
-    count: Arc<watch::Sender<u64>>,
-    /// Woken for the stream's own change.
-    reply: Arc<Notify>,
-}
+struct Counted(watch::Receiver<u64>);
 
-/// The count changing, and a header showing it on every page.
-struct Counter {
-    count: watch::Receiver<u64>,
-    header: Last,
-}
-
-impl Frame for Counter {
-    type State = App;
-    type Place = &'static str;
+impl Changes for Counted {
     type Changed = bool;
-    const LIFETIME: Duration = Duration::from_secs(5);
 
-    async fn open(app: &App, _: &&'static str) -> Self {
-        Self {
-            count: app.count.subscribe(),
-            header: Last::new(),
-        }
-    }
-
-    fn everything() -> bool {
+    fn everything(&self) -> bool {
         true
     }
 
     async fn changed(&mut self) -> Option<bool> {
-        self.count.changed().await.ok().map(|()| true)
+        self.0.changed().await.ok().map(|()| true)
     }
+}
 
-    async fn draw(&mut self, _: &App, changed: &bool) -> Vec<Event> {
+/// Whether the count is even: most changes draw the same region.
+struct Parity(watch::Receiver<u64>, Last);
+
+impl Draw<bool> for Parity {
+    async fn draw(&mut self, changed: &bool) -> Vec<Event> {
         if !changed {
             return Vec::new();
         }
-        let n = *self.count.borrow_and_update();
-        // Only whether it is even shows, so most changes draw the same header.
-        let header = Html::trusted(format!("<p id=\"header\">{}</p>", n % 2));
-        self.header.send(&header).into_iter().collect()
+        let parity = Html::trusted(format!("<p id=\"parity\">{}</p>", *self.0.borrow() % 2));
+        self.1.send(&parity).into_iter().collect()
     }
 }
 
-#[derive(serde::Deserialize, Default)]
-#[serde(default)]
-struct Shown {
-    label: String,
-}
-
-struct Page {
-    label: String,
+/// The count, and how many replies have come.
+struct Count {
+    shown: watch::Receiver<u64>,
     reply: Arc<Notify>,
     replies: u32,
 }
 
-impl Live for Page {
-    type Frame = Counter;
-    const PLACE: &'static str = "page";
-    type Signals = Shown;
-
-    async fn open(app: &App, shown: Shown) -> Self {
-        Self {
-            label: shown.label,
-            reply: app.reply.clone(),
-            replies: 0,
-        }
-    }
-
-    async fn draw(&mut self, app: &App, changed: &bool) -> Vec<Event> {
-        let n = *app.count.borrow();
+impl Draw<bool> for Count {
+    async fn draw(&mut self, changed: &bool) -> Vec<Event> {
         let what = if *changed { "count" } else { "reply" };
+        let n = *self.shown.borrow();
         vec![
-            Html::trusted(format!(
-                "<p id=\"page\">{} {what} {n} {}</p>",
-                self.label, self.replies
-            ))
-            .patch()
-            .into(),
+            Html::trusted(format!("<p id=\"count\">{what} {n} {}</p>", self.replies))
+                .patch()
+                .into(),
         ]
     }
 
@@ -106,68 +64,65 @@ impl Live for Page {
     }
 }
 
-async fn open() -> (App, BodyDataStream) {
-    let app = App {
-        count: Arc::new(watch::channel(0).0),
-        reply: Arc::new(Notify::new()),
+fn open(
+    count: &watch::Sender<u64>,
+    reply: &Arc<Notify>,
+) -> std::pin::Pin<Box<dyn Stream<Item = Event> + Send>> {
+    let drawn = (
+        Parity(count.subscribe(), Last::new()),
+        Count {
+            shown: count.subscribe(),
+            reply: reply.clone(),
+            replies: 0,
+        },
+    );
+    let timing = Timing {
+        lifetime: Duration::from_secs(5),
+        ..Timing::default()
     };
-    let router = Router::new()
-        .route("/stream", get(live::serve::<Page>))
-        .with_state(app.clone());
-    let response = router
-        .oneshot(
-            Request::get("/stream?datastar=%7B%22label%22%3A%22jobs%22%7D")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.headers()["cache-control"], "no-store");
-    (app, response.into_body().into_data_stream())
+    Box::pin(redraws(Counted(count.subscribe()), drawn, timing))
 }
 
-async fn next(body: &mut BodyDataStream) -> String {
-    let chunk = body.next().await.expect("an event").unwrap();
-    String::from_utf8(chunk.to_vec()).unwrap()
+async fn next(events: &mut (impl Stream<Item = Event> + Unpin)) -> String {
+    format!("{:?}", events.next().await.expect("an event"))
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_stream_draws_everything_then_each_change() {
-    let (app, mut body) = open().await;
-    assert!(next(&mut body).await.contains("<p id=\"header\">0</p>"));
+    let (count, _) = watch::channel(0);
+    let reply = Arc::new(Notify::new());
+    let mut events = open(&count, &reply);
+    assert!(next(&mut events).await.contains("parity"));
+    assert!(next(&mut events).await.contains("count 0 0"));
+
+    count.send_replace(2);
+    let drawn = next(&mut events).await;
     assert!(
-        next(&mut body)
-            .await
-            .contains("<p id=\"page\">jobs count 0 0</p>")
+        drawn.contains("count 2 0"),
+        "the parity is what was last sent, so only the count is: {drawn}"
     );
 
-    app.count.send_replace(2);
-    let page = next(&mut body).await;
-    assert!(
-        page.contains("<p id=\"page\">jobs count 2 0</p>"),
-        "the header is what was last sent, so only the page is: {page}"
-    );
+    count.send_replace(3);
+    assert!(next(&mut events).await.contains("parity"));
+    assert!(next(&mut events).await.contains("count 3 0"));
 
-    app.count.send_replace(3);
-    assert!(next(&mut body).await.contains("<p id=\"header\">1</p>"));
-    assert!(next(&mut body).await.contains("jobs count 3 0"));
-
-    app.reply.notify_one();
-    assert!(next(&mut body).await.contains("jobs reply 3 1"));
+    reply.notify_one();
+    assert!(next(&mut events).await.contains("reply 3 1"));
 }
 
 #[tokio::test(start_paused = true)]
 async fn changes_inside_the_throttle_are_one_redraw() {
-    let (app, mut body) = open().await;
-    next(&mut body).await;
-    next(&mut body).await;
+    let (count, _) = watch::channel(0);
+    let mut events = open(&count, &Arc::new(Notify::new()));
+    next(&mut events).await;
+    next(&mut events).await;
     let start = tokio::time::Instant::now();
-    app.count.send_replace(2);
-    assert!(next(&mut body).await.contains("count 2"));
-    app.count.send_replace(4);
-    app.count.send_replace(6);
+    count.send_replace(2);
+    assert!(next(&mut events).await.contains("count 2"));
+    count.send_replace(4);
+    count.send_replace(6);
     assert!(
-        next(&mut body).await.contains("count 6"),
+        next(&mut events).await.contains("count 6"),
         "4 is never drawn"
     );
     assert!(start.elapsed() >= Duration::from_millis(500));
@@ -175,14 +130,24 @@ async fn changes_inside_the_throttle_are_one_redraw() {
 
 #[tokio::test(start_paused = true)]
 async fn a_stream_ends_after_its_lifetime() {
-    let (_app, mut body) = open().await;
-    next(&mut body).await;
-    next(&mut body).await;
+    let (count, _) = watch::channel(0);
+    let mut events = open(&count, &Arc::new(Notify::new()));
+    next(&mut events).await;
+    next(&mut events).await;
     let start = tokio::time::Instant::now();
-    let mut rest = String::new();
-    while let Some(chunk) = body.next().await {
-        rest.push_str(std::str::from_utf8(&chunk.unwrap()).unwrap());
-    }
-    assert_eq!(rest, "", "nothing changed, so nothing was sent");
+    assert!(
+        events.next().await.is_none(),
+        "nothing changed, so nothing was sent"
+    );
     assert_eq!(start.elapsed().as_secs(), 5);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stream_ends_when_its_source_goes() {
+    let (count, _) = watch::channel(0);
+    let mut events = open(&count, &Arc::new(Notify::new()));
+    next(&mut events).await;
+    next(&mut events).await;
+    drop(count);
+    assert!(events.next().await.is_none());
 }

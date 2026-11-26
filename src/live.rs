@@ -1,209 +1,186 @@
-//! Live streams that keep a page current.
+//! The loop of a live stream that keeps a page current.
 //!
-//! Every stream has one shape, [`Live`]: it opens from the page's signals,
-//! draws the regions a change touches, and may wait on a change of its own,
-//! such as a reply it asked for. What changes across the application, and the
-//! regions every page shows (a status line, the navigation), are the
-//! application's [`Frame`], written once. [`serve`] runs any stream:
+//! A stream of this kind draws everything once, then waits for a change and
+//! draws what it touched, again and again. The pieces:
 //!
-//! - It draws everything once, then waits on the frame's changes or the
-//!   stream's own, and draws again. Nothing is polled.
-//! - It draws at most every [`Frame::THROTTLE`], so a burst of changes is one
-//!   redraw. A change source that reports what changed since it was last
-//!   asked, as a `tokio::sync::watch` does, gathers a burst by itself.
-//! - It ends after [`Frame::LIFETIME`]. The page's [`reopen`](crate::reopen)
-//!   attributes open it again within seconds, as they do a stream that ends
-//!   or goes quiet for any other reason. A stream can die without either end
-//!   noticing (a suspended phone, a replaced server), and ending it on a timer
-//!   bounds how long a page sits on one.
+//! - [`Changes`] is where changes come from: the application's, written once.
+//! - [`Draw`] draws the regions a change touches. A pair of drawers is a
+//!   drawer, so regions every page shows and those of one page are written
+//!   apart and run together.
+//! - [`redraws`] is the loop: it draws at most every [`Timing::throttle`], so
+//!   a burst of changes is one redraw, and ends after [`Timing::lifetime`].
+//! - [`Last`] sends a region only when it differs from what was last sent.
 //!
-//! A region is sent only when it differs from what was last sent, with
-//! [`Last`], so a redraw that changes nothing sends nothing.
+//! The handler is the application's own, so it reads whatever it needs from
+//! the request:
 //!
-//! A stream never follows navigation itself: it draws the page its signals
-//! describe, and the page opens it afresh when they change
-//! ([`reopen_on`](crate::reopen_on), as [`page::Whole::live`](crate::page::Whole::live)
-//! writes it).
+//! ```
+//! # use askama_datastar::{Html, stream};
+//! # use askama_datastar::live::{self, Changes, Draw, Last, Timing};
+//! # use axum::{extract::State, response::{Response, sse::Event}};
+//! # use tokio::sync::watch;
+//! # #[derive(Clone)] struct App { count: std::sync::Arc<watch::Sender<u64>> }
+//! /// The count changing.
+//! struct Counted(watch::Receiver<u64>);
+//!
+//! impl Changes for Counted {
+//!     type Changed = bool;
+//!     fn everything(&self) -> bool {
+//!         true
+//!     }
+//!     async fn changed(&mut self) -> Option<bool> {
+//!         self.0.changed().await.ok().map(|()| true)
+//!     }
+//! }
+//!
+//! /// The count, as the page shows it.
+//! struct Count(watch::Receiver<u64>, Last);
+//!
+//! impl Draw<bool> for Count {
+//!     async fn draw(&mut self, _: &bool) -> Vec<Event> {
+//!         let count = Html::trusted(format!(r#"<p id="count">{}</p>"#, *self.0.borrow()));
+//!         self.1.send(&count).into_iter().collect()
+//!     }
+//! }
+//!
+//! async fn live(State(app): State<App>) -> Response {
+//!     let count = Count(app.count.subscribe(), Last::new());
+//!     stream(live::redraws(Counted(app.count.subscribe()), count, Timing::default()))
+//! }
+//! ```
+//!
+//! Ending on a timer matters: a stream can die without either end noticing (a
+//! suspended phone, a replaced server), and the lifetime bounds how long a
+//! page sits on one. The page's [`reopen`](crate::reopen) attributes open
+//! another within seconds. A stream that draws the page an address names need
+//! not follow navigation: [`reopen_on`](crate::reopen_on) the signal holding
+//! the address opens it afresh when the page moves.
 
 use std::future::Future;
 use std::time::Duration;
 
-use axum::extract::State;
-use axum::response::Response;
 use axum::response::sse::Event;
-use futures_util::StreamExt as _;
-use serde::de::DeserializeOwned;
+use futures_util::{Stream, StreamExt as _};
 use tokio::time::{Instant, sleep, sleep_until};
 
-use crate::{Html, Signals, stream};
+use crate::Html;
 
-/// What every live stream of an application shares: where changes come from,
-/// and the regions every page shows.
+/// Where a stream's changes come from.
 ///
-/// One is opened for each stream, so it holds that stream's subscriptions and
-/// what it last sent of the shared regions.
-pub trait Frame: Sized + Send + 'static {
-    /// The application's state, as axum's router holds it.
-    type State: Clone + Send + Sync + 'static;
-    /// What a stream tells the frame about the page it serves, such as the
-    /// entry of the navigation to mark. `()` when nothing.
-    type Place: Sync + 'static;
-    /// What changed since the last redraw. Its default is that nothing did,
-    /// which is what a stream's own [`Live::wake`] draws with.
+/// A source that reports what changed since it was last asked, as a
+/// `tokio::sync::watch` does, gathers a burst of changes into one by itself.
+pub trait Changes: Send + 'static {
+    /// What changed. Its default is that nothing did, which is what a drawer
+    /// waking for a change of its own ([`Draw::wake`]) draws with.
     type Changed: Default + Send + Sync;
 
-    /// The least time between two redraws.
-    const THROTTLE: Duration = Duration::from_millis(250);
-    /// How long a stream runs before the page opens another.
-    const LIFETIME: Duration = Duration::from_secs(60);
-
-    /// Subscribed to the application's changes, for a stream serving `place`.
-    fn open(state: &Self::State, place: &Self::Place) -> impl Future<Output = Self> + Send;
-
     /// What the first draw is told: everything changed.
-    fn everything() -> Self::Changed;
+    fn everything(&self) -> Self::Changed;
 
-    /// The next change, or `None` when the source has gone, which ends the
-    /// stream.
+    /// The next change, or `None` once the source has gone, which ends the
+    /// stream. It must be safe to drop before it resolves, as
+    /// `tokio::select!` needs.
     fn changed(&mut self) -> impl Future<Output = Option<Self::Changed>> + Send;
-
-    /// The regions every page shows that `changed` touches, before the
-    /// stream's own. None, unless the layout has live regions of its own.
-    fn draw(
-        &mut self,
-        state: &Self::State,
-        changed: &Self::Changed,
-    ) -> impl Future<Output = Vec<Event>> + Send {
-        let _ = (state, changed);
-        async { Vec::new() }
-    }
 }
 
-/// A page's live stream.
-///
-/// ```
-/// # use askama_datastar::Html;
-/// # use askama_datastar::live::{Frame, Last, Live};
-/// # use axum::response::sse::Event;
-/// # #[derive(Clone)] struct App { jobs: tokio::sync::watch::Receiver<u64> }
-/// # struct Changes(tokio::sync::watch::Receiver<u64>);
-/// # impl Frame for Changes {
-/// #     type State = App; type Place = (); type Changed = bool;
-/// #     async fn open(app: &App, (): &()) -> Self { Self(app.jobs.clone()) }
-/// #     fn everything() -> bool { true }
-/// #     async fn changed(&mut self) -> Option<bool> { self.0.changed().await.ok().map(|()| true) }
-/// # }
-/// #[derive(serde::Deserialize, Default)]
-/// #[serde(default)]
-/// struct Shown {
-///     url: String,
-/// }
-///
-/// struct Jobs {
-///     list: Last,
-/// }
-///
-/// impl Live for Jobs {
-///     type Frame = Changes;
-///     const PLACE: () = ();
-///     type Signals = Shown;
-///
-///     async fn open(_: &App, _: Shown) -> Self {
-///         Self { list: Last::new() }
-///     }
-///
-///     async fn draw(&mut self, app: &App, changed: &bool) -> Vec<Event> {
-///         if !changed {
-///             return Vec::new();
-///         }
-///         let n = *app.jobs.borrow();
-///         let list = Html::trusted(format!(r#"<p id="jobs">{n} jobs</p>"#));
-///         self.list.send(&list).into_iter().collect()
-///     }
-/// }
-/// ```
-pub trait Live: Sized + Send + 'static {
-    /// The application's frame.
-    type Frame: Frame;
-    /// What the stream tells the frame about the page it serves.
-    const PLACE: <Self::Frame as Frame>::Place;
-    /// The page's signals the stream opens from, read leniently as
-    /// [`Signals`] reads them. The address is among them, as
-    /// [`page::URL`](crate::page::URL).
-    type Signals: DeserializeOwned + Default + Send;
+/// What draws the regions a change touches.
+pub trait Draw<C>: Send + 'static {
+    /// The events for the regions `changed` touches. Everything, the first
+    /// time.
+    fn draw(&mut self, changed: &C) -> impl Future<Output = Vec<Event>> + Send;
 
-    /// Ready to draw the page `signals` describe.
-    fn open(
-        state: &<Self::Frame as Frame>::State,
-        signals: Self::Signals,
-    ) -> impl Future<Output = Self> + Send;
-
-    /// The regions `changed` touches, each sent if it differs from what was
-    /// last sent. Everything, the first time.
-    fn draw(
-        &mut self,
-        state: &<Self::Frame as Frame>::State,
-        changed: &<Self::Frame as Frame>::Changed,
-    ) -> impl Future<Output = Vec<Event>> + Send;
-
-    /// Resolves when the stream has something of its own to draw, such as a
-    /// peer's reply. It must be safe to drop before it resolves, as
-    /// `tokio::select!` needs. Never, unless the stream says.
+    /// Resolves when the drawer has a change of its own to draw, such as a
+    /// reply it asked for; it is then drawn with nothing else changed. Never,
+    /// unless the drawer says. It must be safe to drop before it resolves.
     fn wake(&mut self) -> impl Future<Output = ()> + Send {
         std::future::pending()
     }
 }
 
-/// Runs stream `L` for the page whose signals the request carries, as a
-/// handler: `get(live::serve::<Jobs>)`.
-pub async fn serve<L: Live>(
-    State(state): State<<L::Frame as Frame>::State>,
-    Signals(signals): Signals<L::Signals>,
-) -> Response {
-    let run = Run::<L> {
-        frame: L::Frame::open(&state, &L::PLACE).await,
-        page: L::open(&state, signals).await,
-        state,
-        ends: Instant::now() + L::Frame::LIFETIME,
-        drawn: false,
+/// Two drawers as one: the first's events, then the second's. Either waking
+/// wakes both.
+impl<C: Sync, A: Draw<C>, B: Draw<C>> Draw<C> for (A, B) {
+    async fn draw(&mut self, changed: &C) -> Vec<Event> {
+        let mut events = self.0.draw(changed).await;
+        events.extend(self.1.draw(changed).await);
+        events
+    }
+
+    async fn wake(&mut self) {
+        tokio::select! {
+            () = self.0.wake() => {}
+            () = self.1.wake() => {}
+        }
+    }
+}
+
+/// How often a stream redraws, and how long it runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Timing {
+    /// The least time between two redraws. 250 ms by default.
+    pub throttle: Duration,
+    /// How long the stream runs before the page opens another. A minute by
+    /// default.
+    pub lifetime: Duration,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        Self {
+            throttle: Duration::from_millis(250),
+            lifetime: Duration::from_secs(60),
+        }
+    }
+}
+
+/// The events of `draw` redrawing on every change `changes` reports, starting
+/// with everything, at most every `timing.throttle`, until the source goes or
+/// `timing.lifetime` passes. [`stream`](crate::stream) sends them.
+pub fn redraws<C, D>(changes: C, draw: D, timing: Timing) -> impl Stream<Item = Event> + Send
+where
+    C: Changes,
+    D: Draw<C::Changed>,
+{
+    let run = Run {
+        changed: Some(changes.everything()),
+        changes,
+        draw,
+        timing,
+        ends: Instant::now() + timing.lifetime,
     };
-    stream(futures_util::stream::unfold(run, Run::next).flat_map(futures_util::stream::iter))
+    futures_util::stream::unfold(run, Run::next).flat_map(futures_util::stream::iter)
 }
 
-/// A running stream, between two redraws.
-struct Run<L: Live> {
-    frame: L::Frame,
-    page: L,
-    state: <L::Frame as Frame>::State,
+struct Run<C: Changes, D> {
+    changes: C,
+    draw: D,
+    timing: Timing,
     ends: Instant,
-    drawn: bool,
+    /// What the next draw is told, when it is known before waiting.
+    changed: Option<C::Changed>,
 }
 
-impl<L: Live> Run<L> {
-    /// The next redraw's events, once there is a change to draw; `None` once
-    /// the stream is over.
+impl<C: Changes, D: Draw<C::Changed>> Run<C, D> {
     async fn next(mut self) -> Option<(Vec<Event>, Self)> {
-        let changed = if self.drawn {
-            sleep(<L::Frame as Frame>::THROTTLE).await;
+        let changed = if let Some(changed) = self.changed.take() {
+            changed
+        } else {
+            sleep(self.timing.throttle).await;
             tokio::select! {
-                changed = self.frame.changed() => changed?,
-                () = self.page.wake() => Default::default(),
+                changed = self.changes.changed() => changed?,
+                () = self.draw.wake() => C::Changed::default(),
                 () = sleep_until(self.ends) => return None,
             }
-        } else {
-            self.drawn = true;
-            L::Frame::everything()
         };
-        let mut events = self.frame.draw(&self.state, &changed).await;
-        events.extend(self.page.draw(&self.state, &changed).await);
+        let events = self.draw.draw(&changed).await;
         Some((events, self))
     }
 }
 
 /// A region as last sent, to send it again only when it differs.
 ///
-/// A region that renders something new on every draw from the same state,
-/// such as a fresh random name, is compared by what stays put:
+/// Markup that names something afresh on every render from the same state,
+/// such as a generated id, is compared by what stays put:
 /// [`Last::comparing`] takes the function that keeps it.
 #[derive(Clone, Debug, Default)]
 pub struct Last {

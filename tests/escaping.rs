@@ -24,7 +24,7 @@ fn templates() -> std::path::PathBuf {
 }
 
 fn guard() -> Guard {
-    Guard::new(templates(), &[HOSTILE]).unwrap()
+    Guard::new(&[HOSTILE]).templates(templates()).unwrap()
 }
 
 #[derive(Template)]
@@ -99,12 +99,25 @@ fn elements_the_templates_do_not_write_can_be_added() {
     let page = "<main>&lt;dialog open&gt;</main>";
     assert_eq!(guard().problems(page), []);
     assert_eq!(guard().elements(["dialog"]).problems(page).len(), 1);
+    assert_eq!(
+        guard()
+            .markup("<dialog open></dialog>")
+            .problems(page)
+            .len(),
+        1
+    );
+    let em = "<main>&lt;em&gt;</main>";
+    assert_eq!(
+        guard().markup("<em>").problems(em),
+        [],
+        "the hostile text's own elements come out escaped by right"
+    );
 }
 
 #[test]
 #[should_panic(expected = "does not start with an element")]
 fn hostile_text_starts_with_markup() {
-    let _ = Guard::new(templates(), &["hostile <em>"]);
+    let _ = Guard::new(&["hostile <em>"]);
 }
 
 #[derive(serde::Deserialize)]

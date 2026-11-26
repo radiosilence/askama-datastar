@@ -22,7 +22,10 @@ API (`Html::patch` returns `PatchElements`), so a breaking SDK release is a brea
 release here.
 
 Something goes in only when three of the servers need it; a piece one server needs stays
-in that server. Each piece works alone, so a server can take one without the rest.
+in that server. Each piece works alone, so a server can take one without the rest. Nothing
+here names an application's routes, signals, menus or vocabulary: an application supplies
+them through traits, generics and arguments, with a default only where one is overridable
+(`Layout::ADDRESS`, `Layout::MAIN`, `Timing`).
 
 ## Invariants
 
@@ -36,9 +39,9 @@ in that server. Each piece works alone, so a server can take one without the res
   tested in `tests/responses.rs` and `src/reopen.rs`.
 - **No URL reaches an expression.** `reopen` writes the URL into `data-reopen-url` and
   every expression reads `el.dataset.reopenUrl`; `page::go` writes it into `data-go`, and
-  the history effect reads the `url` signal; tested in `tests/reopen.rs` and
+  `page::history` reads the address from its signal; tested in `tests/reopen.rs` and
   `tests/pages.rs`.
-- **A live stream ends.** `live::serve` ends a stream after `Frame::LIFETIME`, which bounds
+- **A live stream ends.** `live::redraws` ends after `Timing::lifetime`, which bounds
   how long a page sits on a connection that died unnoticed; tested in `tests/live.rs`.
 - **An address names one page.** `page::serve` draws the same body whole and in place, and
   the address it reports leaves out Datastar's `datastar` parameter; tested in
@@ -85,9 +88,10 @@ just fmt
 | `src/asset.rs` | `Asset`: an embedded file under a fingerprinted URL |
 | `src/csp.rs` | `Csp`: the Content Security Policy builder |
 | `src/headers.rs` | `SecurityHeaders`: the layer setting the CSP and the other security headers |
-| `src/page.rs` | `Page`, `Layout`, `Body`, `View`, `serve`, `shown`, `go`: pages drawn whole or in place |
-| `src/live.rs` | `Live`, `Frame`, `Last`, `serve`: the live stream's loop |
+| `src/page.rs` | `View`, `address`, `history`, `go`, and `Page`, `Layout`, `Body`, `serve`, `shown` over them: pages drawn whole or in place |
+| `src/live.rs` | `Changes`, `Draw`, `Timing`, `redraws`, `Last`: a live stream's loop |
 | `src/escaping.rs` | `Guard`, `escaped`, `get`: the escaping guard for applications' tests |
 | `assets/datastar.js` | Datastar's `bundles/datastar.js` at `VERSION`; written by `scripts/datastar.sh` |
-| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`), pages (`pages.rs`), live streams (`live.rs`), the escaping guard (`escaping.rs`) |
+| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`), pages (`pages.rs`), live streams (`live.rs`), the escaping guard (`escaping.rs`), the notes example end to end (`notes.rs`) |
+| `examples/notes.rs` | A routed application from `page`, `live`, `clear` and the guard; `tests/notes.rs` runs it, and the README quotes it |
 | `examples/counter.rs` | The README's quick start, whole; clippy builds it and `tests/readme.rs` fails when the README's copy differs |

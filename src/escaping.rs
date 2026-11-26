@@ -12,9 +12,8 @@
 //! through its router with [`get`], and asks [`Guard::problems`] of each
 //! answer:
 //!
-//! - No markup of the templates' own comes out escaped: `&#60;` or `&lt;`
-//!   followed by an element name the templates write, read from the templates
-//!   directory.
+//! - No markup of the application's own comes out escaped: `&#60;` or `&lt;`
+//!   followed by an element name its templates write.
 //! - The hostile text is never escaped twice (`&#38;#60;`, `&amp;lt;`).
 //! - The hostile text is never left as markup, outside the `data: signals`
 //!   lines of an event stream, which are JSON rather than markup.
@@ -28,10 +27,10 @@
 //! use askama_datastar::escaping::{Guard, escaped, get};
 //!
 //! const HOSTILE: &str = r#"<em>hostile "q" & 'x'</em>"#;
-//! let guard = Guard::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates"), &[HOSTILE])?;
+//! let guard = Guard::new(&[HOSTILE]).templates(concat!(env!("CARGO_MANIFEST_DIR"), "/templates"))?;
 //! // seed HOSTILE into every field a person controls, then:
 //! for in_place in [false, true] {
-//!     let (status, answer) = get(&router, "/wishes", in_place, Duration::from_secs(2)).await;
+//!     let (status, answer) = get(&router, "/notes", in_place, Duration::from_secs(2)).await;
 //!     assert!(status.is_success());
 //!     assert_eq!(guard.problems(&answer), []);
 //!     assert!(answer.contains(&escaped(HOSTILE)));
@@ -54,10 +53,18 @@ use tower_service::Service as _;
 use crate::request::HEADER;
 
 /// Checks answers for text escaped other than once.
+///
+/// It knows the hostile texts and the element names the application's own
+/// markup writes, gathered from wherever that markup lives: a templates
+/// directory ([`Guard::templates`]), markup in hand ([`Guard::markup`]), or
+/// names ([`Guard::elements`]).
 #[derive(Clone, Debug)]
 pub struct Guard {
-    /// The element names the templates write, less the hostile text's own.
+    /// The element names the application's markup writes.
     elements: BTreeSet<String>,
+    /// The element names the hostile texts write, which come out escaped by
+    /// right.
+    hostile: BTreeSet<String>,
     /// Each hostile text as far as an attribute escaper would leave it alone:
     /// up to its first quote or ampersand.
     unescaped: Vec<String>,
@@ -66,37 +73,21 @@ pub struct Guard {
 }
 
 impl Guard {
-    /// A guard for answers drawn from the templates under `templates`, every
-    /// file in it and its subdirectories, with `hostile` in the fields people
-    /// control.
+    /// A guard for answers drawn with `hostile` in the fields people control,
+    /// knowing no element names yet.
     ///
     /// Each hostile text starts with an element, as in
-    /// `<em>hostile "q" & 'x'</em>`, whose name the templates should not write
-    /// themselves: an escaped element of that name is taken for the hostile
-    /// text's own, so the guard does not look for it among the templates'.
-    /// Holding `"`, `'` and `&` too, it tests every character escaping
-    /// changes.
-    ///
-    /// # Errors
-    ///
-    /// If the templates directory cannot be read.
+    /// `<em>hostile "q" & 'x'</em>`, whose name the application's markup
+    /// should not write itself: an escaped element of that name is taken for
+    /// the hostile text's own. Holding `"`, `'` and `&` too, it tests every
+    /// character escaping changes.
     ///
     /// # Panics
     ///
     /// If a hostile text does not start with an element.
-    pub fn new(templates: impl AsRef<Path>, hostile: &[&str]) -> io::Result<Self> {
-        let mut elements = BTreeSet::new();
-        let mut dirs = vec![templates.as_ref().to_path_buf()];
-        while let Some(dir) = dirs.pop() {
-            for entry in std::fs::read_dir(dir)? {
-                let path = entry?.path();
-                if path.is_dir() {
-                    dirs.push(path);
-                } else {
-                    elements.extend(element_names(&std::fs::read_to_string(&path)?));
-                }
-            }
-        }
+    #[must_use]
+    pub fn new(hostile: &[&str]) -> Self {
+        let mut names = BTreeSet::new();
         let mut unescaped = Vec::with_capacity(hostile.len());
         for text in hostile {
             let start = text.split(['"', '\'', '&']).next().unwrap_or_default();
@@ -104,9 +95,7 @@ impl Guard {
                 start.starts_with('<') && element_names(start).next().is_some(),
                 "{text:?} does not start with an element"
             );
-            for name in element_names(text) {
-                elements.remove(&name);
-            }
+            names.extend(element_names(text));
             unescaped.push(start.to_owned());
         }
         let mut twice: Vec<String> = ['<', '>', '"', '\'', '&']
@@ -116,15 +105,45 @@ impl Guard {
         twice.extend(
             ["&amp;lt;", "&amp;gt;", "&amp;quot;", "&amp;#", "&amp;amp;"].map(String::from),
         );
-        Ok(Self {
-            elements,
+        Self {
+            elements: BTreeSet::new(),
+            hostile: names,
             unescaped,
             twice,
-        })
+        }
     }
 
-    /// Element names the templates do not write but the answers carry, such
-    /// as those of components from another crate.
+    /// The element names written by every file under `dir` and its
+    /// subdirectories, as askama's templates directory holds them.
+    ///
+    /// # Errors
+    ///
+    /// If a directory or file under it cannot be read.
+    pub fn templates(mut self, dir: impl AsRef<Path>) -> io::Result<Self> {
+        let mut dirs = vec![dir.as_ref().to_path_buf()];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(dir)? {
+                let path = entry?.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else {
+                    self.elements
+                        .extend(element_names(&std::fs::read_to_string(&path)?));
+                }
+            }
+        }
+        Ok(self)
+    }
+
+    /// The element names `markup` writes: a template's source, or the markup
+    /// a component library renders.
+    #[must_use]
+    pub fn markup(mut self, markup: &str) -> Self {
+        self.elements.extend(element_names(markup));
+        self
+    }
+
+    /// Element names the application's markup writes, given by name.
     #[must_use]
     pub fn elements<'a>(mut self, names: impl IntoIterator<Item = &'a str>) -> Self {
         self.elements
@@ -140,7 +159,9 @@ impl Guard {
         for open in ["&#60;", "&lt;"] {
             for (at, _) in answer.match_indices(open) {
                 let rest = answer[at + open.len()..].trim_start_matches('/');
-                if element_name(rest).is_some_and(|name| self.elements.contains(&name)) {
+                if element_name(rest).is_some_and(|name| {
+                    self.elements.contains(&name) && !self.hostile.contains(&name)
+                }) {
                     out.push(Problem::EscapedMarkup(excerpt(answer, at)));
                 }
             }

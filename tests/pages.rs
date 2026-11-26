@@ -28,18 +28,18 @@ impl Layout for Frame {
         page.signals.entry("rows").or_insert(100.into());
         Ok(Html::trusted(format!(
             "<title id=\"title\">{}</title><body{}><div hidden{}></div><main id=\"main\">{}</main></body>",
-            page.heading.as_deref().unwrap_or(place),
+            page.title.as_deref().unwrap_or(place),
             page.attributes().as_str(),
-            page.live(&["rows"]).as_str(),
+            askama_datastar::reopen_on("/stream/search", &[Self::ADDRESS, "rows"]).as_str(),
             page.body.as_str(),
         )))
     }
 
-    async fn in_place(_: &App, place: &&'static str, heading: Option<&str>) -> Vec<Event> {
+    async fn in_place(_: &App, place: &&'static str, title: Option<&str>) -> Vec<Event> {
         vec![
             Html::trusted(format!(
                 "<title id=\"title\">{}</title>",
-                heading.unwrap_or(place)
+                title.unwrap_or(place)
             ))
             .patch()
             .into(),
@@ -70,7 +70,6 @@ struct Search;
 impl Page for Search {
     type Layout = Frame;
     const PLACE: &'static str = "search";
-    const STREAM: &'static str = "/stream/search";
     type Args = View<Query>;
 
     async fn body(_: &App, View(query): View<Query>) -> Result<Body, &'static str> {
@@ -81,7 +80,7 @@ impl Page for Search {
             return Ok(Body::redirect("/found?q=1"));
         }
         Ok(Body::new(Html::trusted("<p>results</p>"))
-            .heading(query.q)
+            .title(query.q)
             .signal("open", false)
             .status(StatusCode::ACCEPTED))
     }
@@ -193,7 +192,7 @@ async fn a_failure_is_the_layouts_to_answer() {
 
 #[tokio::test]
 async fn an_action_answers_with_the_page_it_leads_to() {
-    let body = Body::new(Html::trusted("<p>found</p>")).heading("found".to_owned());
+    let body = Body::new(Html::trusted("<p>found</p>")).title("found".to_owned());
     let events = page::shown::<Search>(&App, body, "/search?q=found").await;
     assert_eq!(events.len(), 3, "the body, the title and the signals");
 }
@@ -202,10 +201,4 @@ async fn an_action_answers_with_the_page_it_leads_to() {
 #[should_panic(expected = "is not a path on this origin")]
 fn a_page_goes_only_to_a_path_on_its_own_origin() {
     let _ = page::go("//evil.example/");
-}
-
-#[test]
-#[should_panic(expected = "the page's address")]
-fn the_address_signal_is_the_crates() {
-    let _ = Body::new(Html::new()).signal(page::URL, "/elsewhere");
 }
