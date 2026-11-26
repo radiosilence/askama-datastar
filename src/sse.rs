@@ -5,6 +5,7 @@
 //! since what they carry is the page as one person sees it.
 
 use std::convert::Infallible;
+use std::time::Duration;
 
 use axum::http::{HeaderValue, header};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -38,11 +39,23 @@ pub fn events(events: impl IntoIterator<Item = Event>) -> Response {
     )))
 }
 
+/// How long a live stream goes quiet before it sends a heartbeat.
+pub(crate) const HEARTBEAT: Duration = Duration::from_secs(15);
+
+/// The heartbeat's event name. Datastar dispatches every event whose name
+/// starts with `datastar` as a `datastar-fetch` event on the document, which is
+/// what lets a page hear it, and runs nothing for a name it has no watcher for.
+pub(crate) const HEARTBEAT_EVENT: &str = "datastar-heartbeat";
+
 /// `events` as they come, for as long as the stream runs.
 ///
-/// A comment goes down the connection after 15 seconds without an event, so a
-/// proxy that closes a quiet connection leaves it open. The stream ends when
-/// `events` does, or when the client goes and the response is dropped.
+/// After 15 seconds without an event, a heartbeat goes down the connection:
+/// `event: datastar-heartbeat`, which Datastar dispatches and otherwise
+/// ignores. It keeps a proxy that closes a quiet connection from closing this
+/// one, and it gives the page something to hear while nothing changes, so
+/// that silence means the stream is gone; [`reopen`](crate::reopen) is what
+/// acts on it. The stream ends when `events` does, or when the client goes and
+/// the response is dropped.
 #[must_use]
 pub fn stream<S>(events: S) -> Response
 where
@@ -50,8 +63,11 @@ where
     S::Item: Into<Event>,
 {
     unstored(
-        Sse::new(events.map(|event| Ok::<_, Infallible>(event.into())))
-            .keep_alive(KeepAlive::default()),
+        Sse::new(events.map(|event| Ok::<_, Infallible>(event.into()))).keep_alive(
+            KeepAlive::new()
+                .interval(HEARTBEAT)
+                .event(Event::default().event(HEARTBEAT_EVENT)),
+        ),
     )
 }
 

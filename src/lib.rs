@@ -14,7 +14,10 @@
 //! - [`is_datastar`] tells Datastar's requests from page loads, and
 //!   [`require_datastar_on_post`] refuses a POST that did not come from one.
 //! - [`script`] serves Datastar's own script, vendored and pinned, under a
-//!   fingerprinted URL.
+//!   fingerprinted URL, and [`Asset`] any other file embedded in the binary.
+//! - [`reopen`] writes the attributes that keep a page's live stream open.
+//! - [`Csp`] holds a page's Content Security Policy, and [`SecurityHeaders`]
+//!   sets it on every response with the other security headers.
 //!
 //! The events are written by Datastar's SDK ([`datastar`], re-exported), so
 //! their wire format is the SDK's, which Datastar's SDK test suite checks.
@@ -80,6 +83,10 @@
 //! }
 //! ```
 //!
+//! The page opens it, and opens it again when it ends or goes quiet, with the
+//! attributes [`reopen`] writes on an element of their own:
+//! `<div hidden{{ live }}></div>`, where `live` is `reopen("/status")`.
+//!
 //! # Signals
 //!
 //! ```
@@ -115,16 +122,42 @@
 //! assert!(src.starts_with("/assets/datastar.js?v="));
 //! ```
 //!
+//! # Assets and the security headers
+//!
+//! ```
+//! use askama_datastar::{Asset, Csp, SecurityHeaders};
+//! use axum::Router;
+//! use axum::routing::get;
+//!
+//! static APP_CSS: Asset = Asset::new(b"main { margin: 0 }", "text/css; charset=utf-8");
+//!
+//! let app: Router = Router::new()
+//!     .route("/assets/app.css", get(APP_CSS.serve()))
+//!     .route("/assets/datastar.js", get(askama_datastar::script::serve))
+//!     .layer(SecurityHeaders::new(&Csp::new().datastar()));
+//!
+//! let href = APP_CSS.url("/assets/app.css");
+//! assert!(href.starts_with("/assets/app.css?v="));
+//! ```
+//!
 //! [Askama]: https://askama.rs
 //! [Datastar]: https://data-star.dev
 //! [axum]: https://docs.rs/axum
 
+mod asset;
+mod csp;
+pub mod headers;
 mod html;
+mod reopen;
 mod request;
 pub mod script;
 mod sse;
 
+pub use asset::Asset;
+pub use csp::Csp;
+pub use headers::SecurityHeaders;
 pub use html::Html;
+pub use reopen::reopen;
 pub use request::{Signals, is_datastar, require_datastar_on_post};
 pub use sse::{events, stream};
 

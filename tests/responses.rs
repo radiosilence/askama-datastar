@@ -1,4 +1,4 @@
-//! The responses events go out in: their headers, the keep-alive that holds a
+//! The responses events go out in: their headers, the heartbeat that holds a
 //! quiet stream open, and when each ends.
 
 use std::time::Duration;
@@ -31,7 +31,7 @@ async fn next(
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_quiet_stream_sends_a_comment_every_fifteen_seconds() {
+async fn a_quiet_stream_sends_a_heartbeat_every_fifteen_seconds() {
     let patches = futures_util::stream::once(async { Html::trusted("<p id=\"a\"></p>").patch() })
         .chain(futures_util::stream::pending());
     let mut body = Body::new(stream(patches).into_body()).into_data_stream();
@@ -41,13 +41,20 @@ async fn a_quiet_stream_sends_a_comment_every_fifteen_seconds() {
         next(&mut body).await.as_deref(),
         Some("event: datastar-patch-elements\ndata: elements <p id=\"a\"></p>\n\n"),
     );
-    assert_eq!(next(&mut body).await.as_deref(), Some(":\n\n"));
+    // Named `datastar-…`, or Datastar would not tell the page it came.
+    assert_eq!(
+        next(&mut body).await.as_deref(),
+        Some("event: datastar-heartbeat\n\n")
+    );
     assert_eq!(
         started.elapsed(),
         Duration::from_secs(15),
-        "the comment came after the quiet it bridges"
+        "the heartbeat came after the quiet it bridges"
     );
-    assert_eq!(next(&mut body).await.as_deref(), Some(":\n\n"));
+    assert_eq!(
+        next(&mut body).await.as_deref(),
+        Some("event: datastar-heartbeat\n\n")
+    );
     assert_eq!(started.elapsed(), Duration::from_secs(30));
 }
 

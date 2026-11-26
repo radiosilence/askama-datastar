@@ -31,6 +31,13 @@ in that server. Each piece works alone, so a server can take one without the res
 - **No `\r` reaches an SSE line.** `Html::patch` normalises line breaks as an HTML parser
   does; tested in `tests/patches.rs`.
 - **No cache keeps an event stream.** `events` and `stream` send `Cache-Control: no-store`.
+- **A quiet stream says it is alive.** `stream` sends `event: datastar-heartbeat` after 15
+  seconds without an event, and `reopen` takes 40 seconds of silence for a lost stream;
+  tested in `tests/responses.rs` and `src/reopen.rs`.
+- **No URL reaches an expression.** `reopen` writes the URL into `data-reopen-url` and
+  every expression reads `el.dataset.reopenUrl`; tested in `tests/reopen.rs`.
+- **A route's own header wins.** `SecurityHeaders` adds a header only where the response
+  lacks it; tested in `tests/security.rs`.
 - **A page and a fragment at one address stay apart in a cache.** `Html`'s response sends
   `Vary: datastar-request`; tested in `tests/html.rs`.
 - **The vendored script is upstream's.** `assets/datastar.js` is the release's
@@ -66,7 +73,11 @@ just fmt
 | `src/html.rs` | `Html`: rendered markup, `HtmlSafe`, its patch and its response |
 | `src/sse.rs` | `events` and `stream`: the SSE responses |
 | `src/request.rs` | `is_datastar`, `require_datastar_on_post`, `Signals` |
+| `src/reopen.rs` | `reopen`: the attributes that keep a live stream open |
 | `src/script.rs` | The vendored script: `VERSION`, `SOURCE`, `url`, `serve` |
+| `src/asset.rs` | `Asset`: an embedded file under a fingerprinted URL |
+| `src/csp.rs` | `Csp`: the Content Security Policy builder |
+| `src/headers.rs` | `SecurityHeaders`: the layer setting the CSP and the other security headers |
 | `assets/datastar.js` | Datastar's `bundles/datastar.js` at `VERSION`; written by `scripts/datastar.sh` |
-| `tests/` | The public API end to end: the wire format, responses, requests, the script, fragments |
+| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`) |
 | `examples/counter.rs` | The README's quick start, whole; clippy builds it and `tests/readme.rs` fails when the README's copy differs |

@@ -8,13 +8,13 @@
 //! dependent to a new release together.
 //!
 //! Datastar compiles its attribute expressions with `Function`, so a page that
-//! loads it needs `'unsafe-eval'` in its `script-src`.
-
-use std::sync::LazyLock;
+//! loads it needs `'unsafe-eval'` in its `script-src`, which
+//! [`Csp::datastar`](crate::Csp::datastar) adds.
 
 use axum::extract::RawQuery;
-use axum::http::header;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
+
+use crate::Asset;
 
 /// The Datastar release vendored.
 pub const VERSION: &str = "1.0.5";
@@ -22,18 +22,17 @@ pub const VERSION: &str = "1.0.5";
 /// The script, as that release publishes it.
 pub const SOURCE: &str = include_str!("../assets/datastar.js");
 
-/// `v=` and a hash of [`SOURCE`]: the query that names this copy.
-static QUERY: LazyLock<String> = LazyLock::new(|| format!("v={:016x}", fnv1a(SOURCE.as_bytes())));
+static SCRIPT: Asset = Asset::new(SOURCE.as_bytes(), "text/javascript; charset=utf-8");
 
 /// `path` with the query naming this copy of the script, for a page's
 /// `<script type="module" src="…">`: `/assets/datastar.js?v=…`.
 ///
 /// The query changes whenever the script does, so a page from a new build
 /// fetches its own script rather than a cached copy of the last one, and
-/// [`serve`] can let a browser keep it for good.
+/// [`serve`] can let a browser keep it for good. It is [`Asset::url`]'s.
 #[must_use]
 pub fn url(path: &str) -> String {
-    format!("{path}?{}", *QUERY)
+    SCRIPT.url(path)
 }
 
 /// The script, as a handler for the route [`url`]'s `path` names.
@@ -46,27 +45,7 @@ pub fn url(path: &str) -> String {
     reason = "axum takes a handler as an async fn, and this one has nothing to wait for"
 )]
 pub async fn serve(RawQuery(query): RawQuery) -> Response {
-    let cache = if query.as_deref() == Some(QUERY.as_str()) {
-        "public, max-age=31536000, immutable"
-    } else {
-        "public, max-age=3600"
-    };
-    (
-        [
-            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (header::CACHE_CONTROL, cache),
-        ],
-        SOURCE,
-    )
-        .into_response()
-}
-
-/// FNV-1a, 64-bit: enough to notice a change, which is all a fingerprint is
-/// for.
-fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x0100_0000_01b3)
-    })
+    SCRIPT.response(query.as_deref())
 }
 
 #[cfg(test)]
