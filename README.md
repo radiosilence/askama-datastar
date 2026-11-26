@@ -27,7 +27,7 @@ that each work alone:
 
 ```toml
 [dependencies]
-askama_datastar = "0.2"
+askama_datastar = "0.3"
 ```
 
 `Html` implements `HtmlSafe` for the askama release this crate depends on. Under another
