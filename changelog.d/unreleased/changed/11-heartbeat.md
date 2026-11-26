@@ -1,0 +1,1 @@
+- **A quiet stream sends a heartbeat event rather than a comment.** `stream` sends `event: datastar-heartbeat` after 15 seconds without an event, where it sent an SSE comment, which Datastar never shows the page. Datastar dispatches the event and runs nothing for it, so pages are unchanged; `reopen` hears it, and tells a quiet stream from a lost one by it.

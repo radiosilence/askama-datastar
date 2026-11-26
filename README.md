@@ -14,7 +14,10 @@ that each work alone:
 | `events`, `stream` | An answer of a few events, or a live stream kept open, neither stored by a cache |
 | `Signals<T>` | The signals a Datastar request carries, drawn as the default view when they do not parse |
 | `is_datastar`, `require_datastar_on_post` | Datastar's requests told from page loads; a POST it did not send refused |
+| `reopen` | The attributes that open a page's live stream and open it again when it ends or goes quiet |
 | `script` | Datastar's script, vendored and pinned, served under a fingerprinted URL |
+| `Asset` | Any other file embedded in the binary, served under a fingerprinted URL |
+| `Csp`, `SecurityHeaders` | The Content Security Policy every page starts from, and a layer setting it with the other security headers |
 
 ## Install
 
@@ -173,8 +176,9 @@ large fragment travels smaller this way. The response varies on `Datastar-Reques
 one address can answer a page load with the page and Datastar with a fragment without
 a browser's cache showing one in place of the other.
 
-`stream` keeps a live stream open, sending each event as it comes, and a comment after
-15 seconds of quiet so a proxy does not close the connection:
+`stream` keeps a live stream open, sending each event as it comes, and a heartbeat
+(`event: datastar-heartbeat`) after 15 seconds of quiet, so a proxy does not close the
+connection and the page can tell a quiet stream from a lost one:
 
 ```rust
 stream(async_stream::stream! {
@@ -190,10 +194,31 @@ stream(async_stream::stream! {
 
 Both send `Cache-Control: no-store`: what they carry is the page as one person sees it.
 
+### Keeping a stream open
+
 A stream ends when the server stops. Datastar retries a broken connection but does not
 reopen a stream that ended, and `retry: 'always'` counts each reopening against its ten
-retries, so a page holding a live stream reopens it itself, on an interval or when the
-tab is shown again.
+retries; a socket that stops carrying bytes without an error, as a suspended laptop's
+does, looks live to it for good. So a page holding a live stream reopens it itself.
+`reopen(url)` writes the attributes that do, for an element that stays on the page:
+
+```rust
+#[derive(Template)]
+#[template(ext = "html", source = "<body{{ live }}>…</body>")]
+struct Page {
+    live: Html, // reopen("/stream")
+}
+```
+
+They open the stream, and every 5 seconds while the page is shown open it again if it
+ended or has said nothing for 40 seconds, two heartbeats' worth. A stream the server
+refused with a 4xx, such as the 401 of a session a deploy ended, is not asked again
+until the page is shown after being hidden. Returning to a hidden page reopens a stream
+that ended meanwhile; one still open Datastar reopens itself. `@get` aborts the request
+already open to the same URL, so there is only ever one stream. No script of the page's
+own is needed: the expressions keep their state on the element, and the URL is written
+into `data-url` and read with `el.dataset.url`, never into an expression, so any URL
+is safe there.
 
 ## Requests and signals
 
@@ -229,11 +254,57 @@ let src = askama_datastar::script::url("/assets/datastar.js"); // for <script ty
 carries a hash of the script, it is cached for good; any other way, for an hour.
 Datastar compiles its attribute expressions with `Function`, so a page that loads it
 needs `'unsafe-eval'` in its `script-src`. Because the script is served from the
-binary, nothing else is needed: `script-src 'self' 'unsafe-eval'`.
+binary, nothing else is needed: `script-src 'self' 'unsafe-eval'`, which
+`Csp::datastar` gives.
 
 To move to a new Datastar release, run `just datastar X.Y.Z`, which writes the script
 and `VERSION`, and add a changelog fragment saying what the release changes. CI
 downloads the release again and fails if the vendored copy is not exactly it.
+
+## Assets
+
+Every other file a page loads goes the same way as the script: embedded, and named by a
+hash of its bytes so a browser keeps it for good and a new build's page fetches the new
+copy.
+
+```rust
+static APP_CSS: Asset = Asset::new(include_bytes!("../assets/app.css"), "text/css; charset=utf-8");
+
+let app = Router::new().route("/assets/app.css", get(APP_CSS.serve()));
+let href = APP_CSS.url("/assets/app.css"); // "/assets/app.css?v=…"
+```
+
+The hash is FNV-1a over the bytes, worked out once. `APP_CSS.response(query)` answers
+from a handler serving several files from one route.
+
+## Security headers
+
+`SecurityHeaders` is a layer setting, on every response, a Content Security Policy,
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer`. `Csp::new()` is the policy every page starts from:
+
+```text
+default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';
+connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+```
+
+What a server adds to it is one call each:
+
+```rust
+let csp = Csp::new()
+    .datastar()               // script-src 'self' 'unsafe-eval'
+    .import_map(&map_json)    // script-src 'sha256-…' of the map's exact text
+    .allow("img-src", "blob:"); // previews of files about to be uploaded
+let app = Router::new().route("/", get(page)).layer(SecurityHeaders::new(&csp));
+
+let sign_in = Csp::new().deny("script-src"); // a page that runs nothing
+```
+
+The layer sets a header only where the response lacks it, so a route needing a stricter
+or wider policy, such as a file served with `sandbox`, sets its own
+(`csp.header_value()`) and keeps it. Nothing adds `'unsafe-inline'`. With eval allowed,
+escaping is what keeps text from running, so text stays out of Datastar expressions and
+in `data-*` attributes read with `el.dataset`.
 
 ## Why not the SDK alone
 
