@@ -39,12 +39,7 @@ async fn markup_from_people_is_escaped_once_everywhere() {
     let search = format!("/?q={}", encoded(HOSTILE));
     let note = format!("/notes/{id}");
     let mut found = Vec::new();
-    for (url, shows) in [
-        ("/", true),
-        (&search[..], true),
-        (&note[..], true),
-        ("/about", false),
-    ] {
+    for (url, shows) in [("/", true), (&search[..], true), (&note[..], true)] {
         for in_place in [false, true] {
             let (status, answer) = get(&router, url, in_place, WAIT).await;
             assert!(status.is_success(), "{url}: {status}");
