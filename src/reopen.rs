@@ -131,6 +131,12 @@ pub fn reopen(url: &str) -> Html {
 /// later run reopens the stream, refused or not, since the change is the
 /// person's own doing.
 ///
+/// Every signal named must be declared on every page that places the
+/// attributes. Datastar reads an undeclared one as an error inside the effect,
+/// without a console message, and the stream then never reopens on that page;
+/// a signal only some pages hold belongs in a `reopen_on` those pages alone
+/// write.
+///
 /// # Panics
 ///
 /// As [`reopen`] does, and if a signal's name is not letters, digits, `_` and
