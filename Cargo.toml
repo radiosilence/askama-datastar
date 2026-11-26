@@ -1,6 +1,6 @@
 [package]
 name = "askama_datastar"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "Askama templates as Datastar patches for axum: rendered markup, SSE answers and streams, signals, and a vendored datastar.js"
 keywords = ["askama", "datastar", "axum", "sse", "template"]
