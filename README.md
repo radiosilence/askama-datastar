@@ -14,7 +14,7 @@ that each work alone:
 | `events`, `stream` | An answer of a few events, or a live stream kept open, neither stored by a cache |
 | `Signals<T>` | The signals a Datastar request carries, drawn as the default view when they do not parse |
 | `is_datastar`, `require_datastar_on_post` | Datastar's requests told from page loads; a POST it did not send refused |
-| `reopen` | The attributes that open a page's live stream and open it again when it ends or goes quiet |
+| `reopen`, `reopen_on` | The attributes that open a page's live stream and open it again when it ends or goes quiet, or when signals it answers for change |
 | `script` | Datastar's script, vendored and pinned, served under a fingerprinted URL |
 | `Asset` | Any other file embedded in the binary, served under a fingerprinted URL |
 | `Csp`, `SecurityHeaders` | The Content Security Policy every page starts from, and a layer setting it with the other security headers |
@@ -225,6 +225,12 @@ No script of the page's own is needed: the expressions keep their state in
 `el.__reopen`, and the URL is written into `data-reopen-url` and read with
 `el.dataset.reopenUrl`, never into an expression, so no URL can inject script.
 `reopen` takes only a path on the page's own origin, and panics on anything else.
+
+A stream that answers for some of the page's signals, such as the tab shown, is opened
+afresh when they change: `reopen_on("/stream", &["tab", "filters"])` adds an effect that
+reads them. The effect skips its first run, so the stream is opened once as the page
+starts rather than by the effect and again by the delayed start, which would abort the
+first request on every page load.
 
 ## Requests and signals
 
