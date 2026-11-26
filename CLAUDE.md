@@ -22,10 +22,11 @@ API (`Html::patch` returns `PatchElements`), so a breaking SDK release is a brea
 release here.
 
 Something goes in only when three of the servers need it; a piece one server needs stays
-in that server. Each piece works alone, so a server can take one without the rest. Nothing
-here names an application's routes, signals, menus or vocabulary: an application supplies
-them through traits, generics and arguments, with a default only where one is overridable
-(`Layout::ADDRESS`, `Layout::MAIN`, `Timing`).
+in that server. Each piece works alone, so a server can take one without the rest. This is glue,
+not a framework: helpers around Datastar's primitives and reusable patterns, but no
+concept (pages, layouts, page or stream traits) that dictates how an application is
+structured. How the pieces combine belongs in the application, as `examples/notes.rs`
+shows.
 
 ## Invariants
 
@@ -38,14 +39,16 @@ them through traits, generics and arguments, with a default only where one is ov
   seconds without an event, and `reopen` takes 40 seconds of silence for a lost stream;
   tested in `tests/responses.rs` and `src/reopen.rs`.
 - **No URL reaches an expression.** `reopen` writes the URL into `data-reopen-url` and
-  every expression reads `el.dataset.reopenUrl`; `page::go` writes it into `data-go`, and
-  `page::history` reads the address from its signal; tested in `tests/reopen.rs` and
+  every expression reads `el.dataset.reopenUrl`; `go` writes it into `data-go`, and
+  `history` reads the address from its signal; tested in `tests/reopen.rs` and
   `tests/pages.rs`.
-- **A live stream ends.** `live::redraws` ends after `Timing::lifetime`, which bounds
-  how long a page sits on a connection that died unnoticed; tested in `tests/live.rs`.
-- **An address names one page.** `page::serve` draws the same body whole and in place, and
-  the address it reports leaves out Datastar's `datastar` parameter; tested in
-  `tests/pages.rs` and `src/page.rs`.
+- **A live stream ends.** `paced` yields nothing after `Pace::lifetime`, however the
+  throttle falls or however ready its source is; tested in `tests/live.rs`.
+- **One escaper, one origin check.** Every attribute value the crate writes is escaped by
+  `attr::escape`, with askama's numeric references, and every URL it writes passes
+  `attr::assert_on_origin`; tested in `src/attr.rs`.
+- **An address names one page.** `address` leaves out Datastar's `datastar` parameter, and
+  `View` reads the query without it; tested in `src/navigation.rs` and `tests/notes.rs`.
 - **A route's own header wins.** `SecurityHeaders` adds a header only where the response
   lacks it; tested in `tests/security.rs`.
 - **A page and a fragment at one address stay apart in a cache.** `Html`'s response sends
@@ -88,10 +91,11 @@ just fmt
 | `src/asset.rs` | `Asset`: an embedded file under a fingerprinted URL |
 | `src/csp.rs` | `Csp`: the Content Security Policy builder |
 | `src/headers.rs` | `SecurityHeaders`: the layer setting the CSP and the other security headers |
-| `src/page.rs` | `View`, `address`, `history`, `go`, and `Page`, `Layout`, `Body`, `serve`, `shown` over them: pages drawn whole or in place |
-| `src/live.rs` | `Changes`, `Draw`, `Timing`, `redraws`, `Last`: a live stream's loop |
+| `src/attr.rs` | The attribute escaper, the same-origin check and the signal-name check |
+| `src/navigation.rs` | `View`, `address`, `history`, `go`: a page kept on its address |
+| `src/pace.rs` | `Pace`, `paced`, `Last`: a live stream's pace and diff |
 | `src/escaping.rs` | `Guard`, `escaped`, `get`: the escaping guard for applications' tests |
 | `assets/datastar.js` | Datastar's `bundles/datastar.js` at `VERSION`; written by `scripts/datastar.sh` |
-| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`), pages (`pages.rs`), live streams (`live.rs`), the escaping guard (`escaping.rs`), the notes example end to end (`notes.rs`) |
-| `examples/notes.rs` | A routed application from `page`, `live`, `clear` and the guard; `tests/notes.rs` runs it, and the README quotes it |
+| `tests/` | The public API end to end: the wire format (`patches.rs`), responses (`responses.rs`), requests (`requests.rs`), the script (`script.rs`), assets (`assets.rs`), fragments (`html.rs`), stream reopening (`reopen.rs`), the CSP and security headers (`security.rs`), a stream's pace (`live.rs`), the escaping guard (`escaping.rs`), the notes example end to end (`notes.rs`) |
+| `examples/notes.rs` | A routed application assembled from the glue, pages and a live stream in its own code; `tests/notes.rs` runs it, and the README quotes it |
 | `examples/counter.rs` | The README's quick start, whole; clippy builds it and `tests/readme.rs` fails when the README's copy differs |

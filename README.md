@@ -18,8 +18,8 @@ that each work alone:
 | `script` | Datastar's script, vendored and pinned, served under a fingerprinted URL |
 | `Asset` | Any other file embedded in the binary, served under a fingerprinted URL |
 | `Csp`, `SecurityHeaders` | The Content Security Policy every page starts from, and a layer setting it with the other security headers |
-| `page` | Pages drawn whole for a browser or in place for the page itself, and an address the address bar follows |
-| `live` | A live stream's loop: redrawn on change, throttled, sent only where it differs, ended after a lifetime |
+| `View`, `address`, `history`, `go` | A page loaded in place kept on the address that names it |
+| `paced`, `Last` | A live stream's changes spaced out and ended after a lifetime, and a region sent only when it differs |
 | `clear` | A patch emptying a region the server filled |
 | `escaping` | A guard for an application's tests: every answer escapes text exactly once |
 
@@ -254,133 +254,90 @@ reads them. The effect skips its first run, so the stream is opened once as the 
 starts rather than by the effect and again by the delayed start, which would abort the
 first request on every page load.
 
-## Pages and their streams
+## Pages and live streams
 
-An application whose pages each have an address draws a page two ways: whole,
-for a browser loading the address, and in place, for the page following a link
-without leaving the document. Both are drawn from one body, so a reload, a
-shared link, back and forward show what the address names. A live stream keeps
-the page current. The pieces for this are small and each works alone; together
-they make the routed application in
-[`examples/notes.rs`](examples/notes.rs), a notes board whose list updates in
-every open tab: `cargo run --example notes`. The excerpts below are from it.
+How an application puts its pages and streams together is its own
+architecture; this crate gives it the glue. [`examples/notes.rs`](examples/notes.rs)
+is a whole application built this way, a notes board whose list updates in
+every open tab (`cargo run --example notes`). The excerpts below are from it.
 
-### Pages
+### A page, whole or in place
 
-The application writes its document once, as a `page::Layout`, and decides
-everything in it: what a page's `Place` is (here, the menu entry it is shown
-under), which signals every page has, which stream it holds open, and how a
-failure is shown.
+A page following a link in place (`data-on:click__prevent="@get(el.href)"`)
+keeps its document, and the server answers with the new body, its title, and
+its address. One function of the application's draws a page either way, so a
+reload, a shared link, back and forward show what the address names:
 
 ```rust
-struct Board;
-
-impl Layout for Board {
-    type State = Notes;
-    type Place = &'static str;
-    type Error = askama::Error;
-
-    async fn whole(notes: &Notes, entry: &&'static str, mut page: Whole) -> askama::Result<Html> {
-        page.signals.entry("text").or_insert("".into());
-        Html::render(&Document {
-            title: render(&Title { name: page.title.as_deref().unwrap_or(entry) }),
-            attributes: page.attributes(), // <body{{ attributes }}>
-            live: reopen_on("/live", &[Self::ADDRESS]),
-            body: page.body,               // <main id="main">{{ body }}</main>
-            // …
-        })
+fn show(notes: &Notes, headers: &HeaderMap, uri: &Uri, title: &str, body: Html) -> Response {
+    let url = address(uri); // the path and query, less Datastar's own parameter
+    if is_datastar(headers) {
+        return events([
+            body.patch().selector("#main").mode(ElementPatchMode::Inner).into(),
+            render(&Title { name: title }).patch().into(),
+            PatchSignals::new(serde_json::json!({ "url": url }).to_string()).into(),
+        ]);
     }
+    render(&Document {
+        signals: serde_json::json!({ "url": url, "text": "" }).to_string(), // data-signals="{{ signals }}"
+        history: history("url"),          // <body …{{ history }}>
+        live: reopen_on("/live", &["url"]), // the stream, opened afresh when the page moves
+        body,                             // <main id="main">{{ body }}</main>
+        // …
+    })
+    .into_response()
+}
 
-    async fn in_place(_: &Notes, entry: &&'static str, title: Option<&str>) -> Vec<Event> {
-        let title = render(&Title { name: title.unwrap_or(entry) });
-        vec![title.patch().into(), clear("#flash").into()]
-    }
-
-    fn failed(_: &Notes, error: askama::Error, in_place: bool) -> Response { … }
+async fn index(State(notes): State<Notes>, headers: HeaderMap, OriginalUri(uri): OriginalUri, View(search): View<Search>) -> Response {
+    show(&notes, &headers, &uri, "notes", Index::of(&notes, search.q))
 }
 ```
 
-Each page is a `page::Page`: its place, what it reads from the request (any
-extractor), and its `Body`.
+- `address(&uri)` is the request's address as the person sees it, less the
+  `datastar` parameter Datastar adds to a GET. It takes axum's `OriginalUri`,
+  which keeps the prefix a nested router strips.
+- `history(signal)` writes the attributes that push the address onto the
+  history when the signal changes, and load the page whole when back or
+  forward reaches an address the page does not show.
+- `View<T>` reads the query leniently, as `Signals<T>` reads signals: a query
+  that does not parse is `T::default()`, since an address is something a
+  person types and keeps. A key may repeat, filling a `Vec`.
+  `View::of(url)` reads the same from an address, as a stream does.
+- `go(path)` is the in-place answer where a browser would be redirected: a
+  patch that loads the address whole.
 
-```rust
-struct Note;
+### A live stream
 
-impl Page for Note {
-    type Layout = Board;
-    const PLACE: &'static str = "notes";
-    type Args = Path<usize>;
-
-    async fn body(notes: &Notes, Path(id): Path<usize>) -> askama::Result<Body> {
-        let text = notes.get(id);
-        let found = text.is_some();
-        let body = Body::new(Html::render(&NoteBody { id, text: text.clone() })?).title(text);
-        Ok(if found { body } else { body.status(StatusCode::NOT_FOUND) })
-    }
-}
-
-let app = Router::new()
-    .route("/", get(page::serve::<Index>))
-    .route("/notes/{id}", get(page::serve::<Note>));
-```
-
-`page::serve` answers a browser with the layout's document around the body,
-with the body's status. It answers the page itself, loading the address in
-place, with the body morphed into `Layout::MAIN` (`#main` by default), the
-layout's `in_place` events, and the address in the layout's `ADDRESS` signal
-(`url` by default). `Whole::attributes` writes the page's signals and
-`page::history`, which pushes the address onto the history when the signal
-changes, and loads the page whole when back or forward reaches an address it
-does not show. A link loads in place with a constant expression,
-`data-on:click__prevent="@get(el.href)"`, and a search form with
-`@get('/', {contentType: 'form'})`, which puts its fields in the address.
-
-`Body::redirect(path)` is for an address that now names another page: a
-browser is redirected, and a page loading in place goes there with
-`page::go`, a patch that loads an address whole. An action that leads to
-another page answers with `page::shown::<P>(state, body, address)`, the same
-events an in-place load gets.
-
-The pieces work without the traits: `page::View<T>` reads an address's query
-leniently (a query that does not parse is `T::default()`, since an address is
-something a person types and keeps), as an extractor or with `View::of(url)`;
-`page::address(&uri)` is a request's address less Datastar's own parameter;
-`page::history(signal)` and `page::go(path)` stand alone.
-
-### Live streams
-
-A live stream is `live::redraws(changes, draw, timing)`, sent with `stream`.
-`changes` is where the application's changes come from, a `live::Changes`;
-`draw` draws the regions a change touches, a `live::Draw`, and a pair of
-drawers is one drawer, so a region every page shows and a region of one page
-are written apart. The handler is the application's own:
+A live stream redraws what each change touches. `paced(changes, Pace)` passes
+a stream's items on at most once per throttle (250 ms), the first at once, and
+ends after a lifetime (a minute); `Last` sends a region only when it differs
+from what was last sent:
 
 ```rust
 async fn live(State(notes): State<Notes>, Signals(shown): Signals<Shown>) -> Response {
+    let changes = /* every change to `notes.changed`, starting with the state as it is */;
     let on_index = shown.url.split('?').next() == Some("/");
     let View(search) = View::<Search>::of(&shown.url);
-    let drawn = (
-        Counter { notes: notes.clone(), last: Last::new() },
-        Listing { q: on_index.then_some(search.q), notes: notes.clone(), last: Last::new() },
-    );
-    stream(live::redraws(Changed(notes.changed.subscribe()), drawn, Timing::default()))
+    let (mut count, mut list) = (Last::new(), Last::new());
+    stream(paced(changes, Pace::default()).flat_map(move |()| {
+        let mut events = Vec::new();
+        events.extend(count.send(&render(&Count { n: notes.matching("").len() })));
+        if on_index {
+            events.extend(list.send(&render(&List { notes: notes.matching(&search.q) })));
+        }
+        futures_util::stream::iter(events)
+    }))
 }
 ```
 
-It draws everything once, then waits for a change, or for a drawer's own
-`wake` (a reply it asked for), and draws again, at most every
-`Timing::throttle` (250 ms). A source that reports what changed since it was
-last asked, as a `tokio::sync::watch` does, gathers a burst into one redraw.
-`Last` sends a region only when it differs from what was last sent, so a
-redraw that changes nothing sends nothing; `Last::comparing(f)` compares what
-`f` keeps of it, for markup that names something afresh on every render.
-
-The stream ends after `Timing::lifetime` (a minute), and the page's `reopen`
-attributes open another within seconds: a stream can die without either end
-noticing, as a suspended phone's does, and the lifetime bounds how long a page
-sits on one. The stream draws the page its address signal names and never
-follows navigation; `reopen_on` that signal opens it afresh when the page
-moves.
+`paced` does not merge changes: a source that gathers what happened since it
+was last asked, as a `tokio::sync::watch` does, turns a burst inside the
+throttle into one item by itself. The lifetime bounds how long a page sits on
+a stream that died without either end noticing, as a suspended phone's does;
+`reopen` opens another within seconds. The stream draws the page its address
+signal names and never follows navigation, since `reopen_on` that signal
+opens it afresh when the page moves. `Last::comparing(f)` compares what `f`
+keeps of the markup, for markup that names something afresh on every render.
 
 ## The escaping guard
 
@@ -414,6 +371,7 @@ for (url, shows) in [("/", true), (&search[..], true), (&note[..], true), ("/abo
 `&amp;lt;`), and the hostile text left as markup outside an event stream's
 `data: signals` lines, which are JSON. The element names come from wherever
 the markup lives: `Guard::templates(dir)` reads a templates directory,
+passing over files that are not text,
 `Guard::markup(text)` any markup, `Guard::elements(names)` names given.
 `escaped` is askama's escaping, the form a page shows text in. `get` reads an
 answer through the router, cutting a live stream off after the wait; a stream

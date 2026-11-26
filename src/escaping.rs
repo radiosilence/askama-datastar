@@ -113,8 +113,9 @@ impl Guard {
         }
     }
 
-    /// The element names written by every file under `dir` and its
-    /// subdirectories, as askama's templates directory holds them.
+    /// The element names written by every text file under `dir` and its
+    /// subdirectories, as askama's templates directory holds them. A file that
+    /// is not UTF-8, such as an image or `.DS_Store`, is passed over.
     ///
     /// # Errors
     ///
@@ -126,9 +127,8 @@ impl Guard {
                 let path = entry?.path();
                 if path.is_dir() {
                     dirs.push(path);
-                } else {
-                    self.elements
-                        .extend(element_names(&std::fs::read_to_string(&path)?));
+                } else if let Ok(text) = String::from_utf8(std::fs::read(&path)?) {
+                    self.elements.extend(element_names(&text));
                 }
             }
         }

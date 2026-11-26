@@ -79,10 +79,7 @@ async fn a_page_loads_whole_and_in_place() {
         page.contains("<title id=\"title\">notes · notes</title>"),
         "{page}"
     );
-    assert!(
-        page.contains("&quot;url&quot;:&quot;/?q=mo&quot;"),
-        "{page}"
-    );
+    assert!(page.contains("&#34;url&#34;:&#34;/?q=mo&#34;"), "{page}");
     assert!(page.contains(r#"data-reopen-url="/live""#), "{page}");
     assert!(page.contains("<li><a href=\"/notes/0\""), "{page}");
 

@@ -22,8 +22,9 @@ futures-util = { version = "0.3.34", default-features = false }
 pin-project-lite = "0.2.18"
 serde = { version = "1.0.229", default-features = false }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
-# An import map's CSP hash.
+# `View`'s query, a key that repeats filling a `Vec`, as axum-extra's `Query` reads it.
 serde_html_form = { version = "0.2.8", default-features = false }
+# An import map's CSP hash.
 sha2 = { version = "0.11.2", default-features = false }
 # A live stream's throttle and lifetime.
 tokio = { version = "1.54.1", default-features = false, features = ["macros", "time"] }
