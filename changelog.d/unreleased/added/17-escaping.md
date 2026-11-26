@@ -1,0 +1,1 @@
+- **`escaping`: a guard for applications' tests that every answer escapes text exactly once.** It finds a fragment spliced in as text, text escaped twice, and text left as markup.

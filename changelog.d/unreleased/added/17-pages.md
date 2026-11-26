@@ -1,0 +1,1 @@
+- **`page`: pages drawn whole for a browser or in place for the page itself.** `View`, `address`, `history` and `go` work alone; `Layout`, `Page`, `Body`, `serve` and `shown` combine them, with the address signal and main region the layout's to name.

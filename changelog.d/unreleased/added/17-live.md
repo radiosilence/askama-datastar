@@ -1,0 +1,1 @@
+- **`live`: the loop of a live stream.** `redraws` draws everything once, then what each change touches, at most every throttle, and ends after a lifetime; `Changes` and `Draw` are the application's, a pair of drawers is a drawer, and `Last` sends a region only when it differs.

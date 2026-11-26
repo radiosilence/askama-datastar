@@ -1,0 +1,1 @@
+- **`clear(selector)`: a patch that empties a region the server filled.** Sending a region with no markup by id changes nothing, since there is no element to match.
