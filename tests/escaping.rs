@@ -11,16 +11,23 @@ use axum::response::{IntoResponse, Response};
 
 const HOSTILE: &str = r#"<em>hostile "q" & 'x'</em>"#;
 
-fn templates() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("askama-datastar-escaping-{}", std::process::id()));
-    std::fs::create_dir_all(dir.join("cards")).unwrap();
-    std::fs::write(dir.join("page.html"), "<main>{{ card }}</main>").unwrap();
-    std::fs::write(
-        dir.join("cards").join("card.html"),
-        r#"<article class="card"><h2>{{ title }}</h2></article>"#,
-    )
-    .unwrap();
-    dir
+/// A templates directory, written once: tests run in parallel, and one
+/// rewriting a file while another reads it would read it half written.
+fn templates() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let dir =
+            std::env::temp_dir().join(format!("askama-datastar-escaping-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("cards")).unwrap();
+        std::fs::write(dir.join("page.html"), "<main>{{ card }}</main>").unwrap();
+        std::fs::write(
+            dir.join("cards").join("card.html"),
+            r#"<article class="card"><h2>{{ title }}</h2></article>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join(".DS_Store"), [0xff, 0xfe, 0x00]).unwrap();
+        dir
+    })
 }
 
 fn guard() -> Guard {
