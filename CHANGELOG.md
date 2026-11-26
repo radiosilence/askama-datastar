@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- **`Asset`: any embedded file under a fingerprinted URL.** What `script` does for Datastar's script, for a server's own stylesheet, scripts, fonts and icons: `url(path)` adds the FNV-1a hash of the bytes as its `v` parameter, and the file is cached for good at that address and for an hour at any other. `script` is now built on it.
+- **`reopen(url)`: a live stream that reopens itself.** Datastar does not reopen a stream that ended, and cannot see one whose socket went silent, so pages wrote reopen attributes by hand. `reopen` writes them for an element of their own: the stream is opened again once it ends or has said nothing for 40 seconds, not after a 401 or 403 until the page is shown again, and the URL, a path on the page's origin, is read from `data-reopen-url` rather than written into an expression.
+- **`Csp` and `SecurityHeaders`.** Every server wrote the same security middleware and the same policy by hand. `Csp::new()` is the policy STANDARD §8 gives, with `datastar()` for Datastar's `'unsafe-eval'`, `import_map(text)` for an import map's hash, `deny(directive)` for `script-src 'none'` and the like, and `allow(directive, source)` for extra sources such as `blob:`. `SecurityHeaders` is a layer setting it with `nosniff`, `X-Frame-Options: DENY` (while the policy refuses frames) and `Referrer-Policy: same-origin`, which keeps a form POST's `Origin` header where `no-referrer` would send `null`; it leaves a header a route set itself alone.
+
+### Changed
+
+- **A quiet stream sends a heartbeat event rather than a comment.** `stream` sends `event: datastar-heartbeat` after 15 seconds without an event, where it sent an SSE comment, which Datastar never shows the page. Datastar dispatches the event and runs nothing for it, so pages are unchanged; `reopen` hears it, and tells a quiet stream from a lost one by it.
+
 ## 0.1.2
 
 ### Changed
