@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+### Added
+
+- **`escaping::send(router, request, wait)`.** The guard's tests can request a page as a signed-in person: `get` builds its own request and cannot carry a session's cookie, a host or a form's body, so an application behind sign-in wrote its own copy of it.
+
 ## 0.3.1
 
 ### Changed
