@@ -9,8 +9,8 @@
 //! The guard checks answers drawn with markup-shaped text, the hostile text,
 //! in every field a person or a peer controls. An application's test seeds
 //! that text, requests every page (whole and in place) and every stream
-//! through its router with [`get`], and asks [`Guard::problems`] of each
-//! answer:
+//! through its router with [`get`] (or [`send`], for a request carrying a
+//! session), and asks [`Guard::problems`] of each answer:
 //!
 //! - No markup of the application's own comes out escaped: `&#60;` or `&lt;`
 //!   followed by an element name its templates write.
@@ -237,6 +237,28 @@ pub async fn get(
         request = request.header(HEADER, "true");
     }
     let request = request.body(Body::empty()).expect("a GET of a valid URI");
+    send(router, request, wait).await
+}
+
+/// What `router` answers to `request`, read for at most `wait`: [`get`] for a
+/// request it cannot build, such as one carrying a session's cookie, a host,
+/// or a form's body.
+///
+/// ```no_run
+/// # async fn test(router: axum::Router) {
+/// use std::time::Duration;
+/// use axum::body::Body;
+/// use axum::http::Request;
+///
+/// let request = Request::get("/notes")
+///     .header("cookie", "session=s3cret")
+///     .header("datastar-request", "true")
+///     .body(Body::empty())
+///     .unwrap();
+/// let (status, answer) = askama_datastar::escaping::send(&router, request, Duration::from_secs(2)).await;
+/// # }
+/// ```
+pub async fn send(router: &Router, request: Request<Body>, wait: Duration) -> (StatusCode, String) {
     let response = match router.clone().call(request).await {
         Ok(response) => response,
         Err(never) => match never {},
