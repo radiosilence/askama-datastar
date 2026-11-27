@@ -8,20 +8,30 @@ drawn by the same templates whether it is loaded whole or changed in place, and
 reloading it loses nothing. This crate is the glue every such server needs, in pieces
 that each work alone:
 
-| Piece | What it does |
-|---|---|
-| `Html` | Markup a template rendered. A page embeds it as it is, `.patch()` sends it as a patch, and a handler returns it as `text/html` |
-| `events`, `stream` | An answer of a few events, or a live stream kept open, neither stored by a cache |
-| `Signals<T>` | The signals a Datastar request carries, drawn as the default view when they do not parse |
-| `is_datastar`, `require_datastar_on_post` | Datastar's requests told from page loads; a POST it did not send refused |
-| `reopen`, `reopen_on` | The attributes that open a page's live stream and open it again when it ends or goes quiet, or when signals it answers for change |
-| `script` | Datastar's script, vendored and pinned, served under a fingerprinted URL |
-| `Asset` | Any other file embedded in the binary, served under a fingerprinted URL |
-| `Csp`, `SecurityHeaders` | The Content Security Policy every page starts from, and a layer setting it with the other security headers |
-| `View`, `address`, `history`, `go` | A page loaded in place kept on the address that names it |
-| `paced`, `Last` | A live stream's changes spaced out and ended after a lifetime, and a region sent only when it differs |
-| `clear` | A patch emptying a region the server filled |
-| `escaping` | A guard for an application's tests: every answer escapes text exactly once |
+| Piece                                     | What it does                                                                                                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `Html`                                    | Markup a template rendered. A page embeds it as it is, `.patch()` sends it as a patch, and a handler returns it as `text/html`    |
+| `events`, `stream`                        | An answer of a few events, or a live stream kept open, neither stored by a cache                                                  |
+| `Signals<T>`                              | The signals a Datastar request carries, drawn as the default view when they do not parse                                          |
+| `is_datastar`, `require_datastar_on_post` | Datastar's requests told from page loads; a POST it did not send refused                                                          |
+| `reopen`, `reopen_on`                     | The attributes that open a page's live stream and open it again when it ends or goes quiet, or when signals it answers for change |
+| `script`                                  | Datastar's script, vendored and pinned, served under a fingerprinted URL                                                          |
+| `Asset`                                   | Any other file embedded in the binary, served under a fingerprinted URL                                                           |
+| `Csp`, `SecurityHeaders`                  | The Content Security Policy every page starts from, and a layer setting it with the other security headers                        |
+| `View`, `address`, `history`, `go`        | A page loaded in place kept on the address that names it                                                                          |
+| `paced`, `Last`                           | A live stream's changes spaced out and ended after a lifetime, and a region sent only when it differs                             |
+| `clear`                                   | A patch emptying a region the server filled                                                                                       |
+| `escaping`                                | A guard for an application's tests: every answer escapes text exactly once                                                        |
+
+### Ecosystem
+
+Some projects I've made for the askama/axum/datastar stack:
+
+- [askama-analyzer](https://github.com/radiosilence/askama-analyzer): Language server for askama templates.
+- [askama-datastar](https://github.com/radiosilence/askama-datastar): Helpers for using Askama with datastar nicely.
+- [askama-gettext](https://github.com/radiosilence/blit/tree/main/crates/askama_gettext): Helpers for doing i18 nicely using standardised gettext (po, pot, etc) files.
+- [zed-askama](https://github.com/radiosilence/zed-askama): Zed extension to support the LSP with all the bells and whistles.
+- [koan-kit-web](https://github.com/radiosilence/koan/tree/main/koan-kit-web): An example component library based on Askama and datastar.
 
 ## Install
 
