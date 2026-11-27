@@ -29,7 +29,7 @@ Some projects I've made for the askama/axum/datastar stack:
 
 - [askama-analyzer](https://github.com/radiosilence/askama-analyzer): Language server for askama templates.
 - [askama-datastar](https://github.com/radiosilence/askama-datastar): Helpers for using Askama with datastar nicely.
-- [askama-gettext](https://github.com/radiosilence/blit/tree/main/crates/askama_gettext): Helpers for doing i18 nicely using standardised gettext (po, pot, etc) files.
+- [askama-gettext](https://github.com/radiosilence/askama-gettext): Helpers for doing i18 nicely using standardised gettext (po, pot, etc) files.
 - [zed-askama](https://github.com/radiosilence/zed-askama): Zed extension to support the LSP with all the bells and whistles.
 - [koan-kit-web](https://github.com/radiosilence/koan/tree/main/koan-kit-web): An example component library based on Askama and datastar.
 
