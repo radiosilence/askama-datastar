@@ -183,9 +183,9 @@ dependencies = [
 
 [[package]]
 name = "datastar"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49a2209ee5f8954be4d6d90f253630d2be400965e604e7f8df446a75400a4ca8"
+checksum = "c4878c47442f15ba303632f9a241606e67f4deec016c69c8539e271d8eee3c12"
 dependencies = [
  "axum",
  "serde",
@@ -309,9 +309,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c3e324da4c95177d6291d4c8730197c0d1822f8a9766814a4a44fa5ab797c9c"
+checksum = "229c6ff5584df4c6becbfe00567128bac768c8cd32ebc8a8366bd81ed072e8f3"
 dependencies = [
  "atomic-waker",
  "bytes",
